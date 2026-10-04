@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 
 export default function ProfilePage() {
@@ -87,9 +88,21 @@ export default function ProfilePage() {
           <h2 className="text-xl font-semibold">Account</h2>
           <div className="text-sm text-neutral-400">Email: {user?.email}</div>
           <div className="text-sm text-neutral-400">Role: <span className="capitalize text-indigo-400 font-medium">{user?.role}</span></div>
-          <button onClick={logout} className="text-red-400 hover:text-red-300 font-medium py-2">
-            Log Out
-          </button>
+          {user?.role === 'superadmin' && (
+            <div className="pt-2">
+              <Link
+                to="/admin"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold shadow transition-colors"
+              >
+                <span>🛡️</span> Open Admin Console →
+              </Link>
+            </div>
+          )}
+          <div>
+            <button onClick={logout} className="text-rose-400 hover:text-rose-300 font-medium py-2">
+              Log Out
+            </button>
+          </div>
         </section>
       </div>
     </div>
