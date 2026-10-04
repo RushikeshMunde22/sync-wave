@@ -1,0 +1,172 @@
+import { Router } from 'express';
+import { requireAuth } from '../auth/auth.middleware.js';
+import { requireGroupMember, requireGroupAdmin, requireGroupOwner } from './group.middleware.js';
+import * as GroupService from './group.service.js';
+import { createGroupSchema, joinGroupSchema, updateGroupSchema, memberActionSchema, inviteActionSchema } from './group.schemas.js';
+
+const router = Router();
+
+// Create group
+router.post('/', requireAuth, async (req, res, next) => {
+  try {
+    const { name } = createGroupSchema.parse(req.body);
+    const group = await GroupService.createGroup(req.user!.id, name);
+    res.status(201).json(group);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// List my groups
+router.get('/', requireAuth, async (req, res, next) => {
+  try {
+    const groups = await GroupService.getUserGroups(req.user!.id);
+    res.json(groups);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Join by code
+router.post('/join', requireAuth, async (req, res, next) => {
+  try {
+    const { code } = joinGroupSchema.parse(req.body);
+    const result = await GroupService.joinGroup(req.user!.id, code);
+    
+    if (result.error) {
+      return res.status(400).json({ error: result.error });
+    }
+    
+    res.json(result.group);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get group preview by invite code (public)
+router.get('/join/:code', async (req, res, next) => {
+  try {
+    const { code } = req.params;
+    const group = await GroupService.getGroupByInviteCode(code);
+    
+    if (!group) {
+      return res.status(404).json({ error: 'Invalid or expired invite code' });
+    }
+    
+    // Only return non-sensitive data
+    res.json({
+      name: group.name,
+      // Ideally member count would be added here via a specialized query in real impl
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get group details
+router.get('/:id', requireAuth, requireGroupMember, async (req, res, next) => {
+  try {
+    const group = await GroupService.getGroup(req.params.id);
+    if (!group) {
+      return res.status(404).json({ error: 'Group not found' });
+    }
+    res.json(group);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Update group settings
+router.put('/:id', requireAuth, requireGroupMember, requireGroupAdmin, async (req, res, next) => {
+  try {
+    const settings = updateGroupSchema.parse(req.body);
+    await GroupService.updateGroupSettings(req.user!.id, req.params.id, settings);
+    res.status(200).json({ message: 'Settings updated successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Delete group
+router.delete('/:id', requireAuth, requireGroupMember, requireGroupOwner, async (req, res, next) => {
+  try {
+    await GroupService.deleteGroup(req.user!.id, req.params.id);
+    res.status(200).json({ message: 'Group deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Leave group
+router.post('/:id/leave', requireAuth, requireGroupMember, async (req, res, next) => {
+  try {
+    await GroupService.leaveGroup(req.user!.id, req.params.id);
+    res.status(200).json({ message: 'Left group successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get members
+router.get('/:id/members', requireAuth, requireGroupMember, async (req, res, next) => {
+  try {
+    const members = await GroupService.getGroupMembers(req.params.id);
+    res.json(members);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Member actions (promote, demote, kick, transfer)
+router.post('/:id/members/action', requireAuth, requireGroupMember, async (req, res, next) => {
+  try {
+    const { userId: targetId, action } = memberActionSchema.parse(req.body);
+    const actorId = req.user!.id;
+    const groupId = req.params.id;
+
+    if (actorId === targetId) {
+      return res.status(400).json({ error: 'Cannot perform action on yourself' });
+    }
+
+    switch (action) {
+      case 'promote':
+        await GroupService.promoteMember(actorId, targetId, groupId);
+        break;
+      case 'demote':
+        await GroupService.demoteMember(actorId, targetId, groupId);
+        break;
+      case 'kick':
+        await GroupService.kickMember(actorId, targetId, groupId);
+        break;
+      case 'transfer':
+        await GroupService.transferOwnership(actorId, targetId, groupId);
+        break;
+    }
+
+    res.status(200).json({ message: `Member ${action}d successfully` });
+  } catch (error) {
+    // Basic error handling assuming service throws Error with messages
+    res.status(400).json({ error: (error as Error).message });
+  }
+});
+
+// Invite actions
+router.post('/:id/invite', requireAuth, requireGroupMember, requireGroupAdmin, async (req, res, next) => {
+  try {
+    const { action, expiresIn } = inviteActionSchema.parse(req.body);
+    const actorId = req.user!.id;
+    const groupId = req.params.id;
+
+    if (action === 'regenerate') {
+      const newCode = await GroupService.regenerateInviteCode(actorId, groupId, expiresIn);
+      res.json({ inviteCode: newCode });
+    } else if (action === 'revoke') {
+      await GroupService.revokeInviteCode(actorId, groupId);
+      res.status(200).json({ message: 'Invite code revoked' });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
+export default router;
