@@ -53,6 +53,24 @@ const cookieOptions = {
   path: '/',
 };
 
+function formatErrorMessage(err: any, fallback: string): string {
+  if (!err) return fallback;
+  if (typeof err === 'string') return err;
+  if (Array.isArray(err)) {
+    return err.map((e: any) => (typeof e === 'string' ? e : e?.message || JSON.stringify(e))).join(', ');
+  }
+  if (err.errors && Array.isArray(err.errors)) {
+    return err.errors.map((e: any) => e.message || 'Invalid input').join(', ');
+  }
+  if (err.issues && Array.isArray(err.issues)) {
+    return err.issues.map((e: any) => e.message || 'Invalid input').join(', ');
+  }
+  if (err.message && typeof err.message === 'string' && err.message !== '[object Object]') {
+    return err.message;
+  }
+  return fallback;
+}
+
 router.post(['/signup', '/register'], signupLimiter, async (req, res) => {
   try {
     if (config.SIGNUPS_DISABLED) {
@@ -89,7 +107,7 @@ router.post(['/signup', '/register'], signupLimiter, async (req, res) => {
 
     res.status(201).json({ user, recoveryCode });
   } catch (err: any) {
-    res.status(400).json({ error: err.errors || err.message || 'Signup failed' });
+    res.status(400).json({ error: formatErrorMessage(err, 'Signup failed') });
   }
 });
 
@@ -119,7 +137,7 @@ router.post('/login', loginLimiter, async (req, res) => {
     res.cookie('syncwave_session', sessionId, cookieOptions);
     res.json({ user });
   } catch (err: any) {
-    res.status(401).json({ error: err.errors || err.message || 'Invalid email or password' });
+    res.status(401).json({ error: formatErrorMessage(err, 'Invalid email or password') });
   }
 });
 
@@ -142,7 +160,7 @@ router.put('/me', requireAuth, (req, res) => {
     updateProfile(req.user!.id, data);
     res.json({ success: true });
   } catch (err: any) {
-    res.status(400).json({ error: err.errors || err.message || 'Update failed' });
+    res.status(400).json({ error: formatErrorMessage(err, 'Update failed') });
   }
 });
 
@@ -159,7 +177,7 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
       message: 'If an account exists with this email, a temporary password has been sent to your registered email address.'
     });
   } catch (err: any) {
-    res.status(400).json({ error: err.errors || err.message || 'Invalid request' });
+    res.status(400).json({ error: formatErrorMessage(err, 'Invalid request or email format') });
   }
 });
 
@@ -169,7 +187,7 @@ router.post('/reset-password', forgotPasswordLimiter, async (req, res) => {
     const { newRecoveryCode } = await resetPasswordWithRecovery(data.email, data.recoveryCode, data.newPassword);
     res.json({ recoveryCode: newRecoveryCode });
   } catch (err: any) {
-    res.status(400).json({ error: err.errors || err.message || 'Reset failed' });
+    res.status(400).json({ error: formatErrorMessage(err, 'Reset failed') });
   }
 });
 

@@ -1,5 +1,20 @@
 const BASE_API = '/api';
 
+function parseErrorMessage(err: any, fallback: string): string {
+  if (!err) return fallback;
+  if (typeof err === 'string') return err;
+  if (Array.isArray(err)) {
+    return err.map((e: any) => (typeof e === 'string' ? e : e?.message || JSON.stringify(e))).join(', ');
+  }
+  if (typeof err === 'object') {
+    if (Array.isArray(err.errors)) return parseErrorMessage(err.errors, fallback);
+    if (Array.isArray(err.issues)) return parseErrorMessage(err.issues, fallback);
+    if (typeof err.message === 'string' && err.message && err.message !== '[object Object]') return err.message;
+  }
+  const str = String(err);
+  return str === '[object Object]' ? fallback : str;
+}
+
 export const api = {
   async get(url: string, options?: { params?: Record<string, any> }) {
     let fullUrl = url.startsWith('/api') ? url : `${BASE_API}${url.startsWith('/') ? url : `/${url}`}`;
@@ -22,7 +37,7 @@ export const api = {
     });
     if (!res.ok) {
       const errData = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(errData.error || `HTTP ${res.status}`);
+      throw new Error(parseErrorMessage(errData.error, `HTTP ${res.status}`));
     }
     const data = await res.json();
     return { data };
@@ -41,7 +56,7 @@ export const api = {
     });
     if (!res.ok) {
       const errData = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(errData.error || `HTTP ${res.status}`);
+      throw new Error(parseErrorMessage(errData.error, `HTTP ${res.status}`));
     }
     const data = await res.json();
     return { data };
@@ -60,7 +75,7 @@ export const api = {
     });
     if (!res.ok) {
       const errData = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(errData.error || `HTTP ${res.status}`);
+      throw new Error(parseErrorMessage(errData.error, `HTTP ${res.status}`));
     }
     const data = await res.json();
     return { data };
@@ -75,7 +90,7 @@ export const api = {
     });
     if (!res.ok) {
       const errData = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(errData.error || `HTTP ${res.status}`);
+      throw new Error(parseErrorMessage(errData.error, `HTTP ${res.status}`));
     }
     const data = await res.json();
     return { data };

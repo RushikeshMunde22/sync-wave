@@ -12,6 +12,22 @@ export default function ForgotPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
+  const formatErr = (err: any, fallback: string) => {
+    if (!err) return fallback;
+    if (typeof err === 'string') return err;
+    if (Array.isArray(err)) {
+      return err.map((e: any) => (typeof e === 'string' ? e : e?.message || JSON.stringify(e))).join(', ');
+    }
+    if (typeof err === 'object') {
+      if (Array.isArray(err.errors)) return formatErr(err.errors, fallback);
+      if (Array.isArray(err.issues)) return formatErr(err.issues, fallback);
+      if (typeof err.message === 'string' && err.message && err.message !== '[object Object]') return err.message;
+      if (typeof err.error !== 'undefined') return formatErr(err.error, fallback);
+    }
+    const str = String(err);
+    return str === '[object Object]' ? fallback : str;
+  };
+
   const handleEmailRecovery = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -27,14 +43,14 @@ export default function ForgotPasswordPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to request password recovery');
+        throw new Error(formatErr(data.error, 'Failed to request password recovery'));
       }
 
       setSuccessMessage(
         'Password sent! If an account exists for this email, a new temporary password has been delivered to your inbox. Check your email and use it to log in.'
       );
     } catch (err: any) {
-      setError(err.message || 'Something went wrong. Please try again.');
+      setError(formatErr(err, 'Something went wrong. Please try again.'));
     } finally {
       setIsLoading(false);
     }
@@ -55,13 +71,13 @@ export default function ForgotPasswordPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to reset password');
+        throw new Error(formatErr(data.error, 'Failed to reset password'));
       }
 
       setSuccessMessage('Password reset successfully! Redirecting to login...');
       setTimeout(() => navigate('/login'), 2000);
     } catch (err: any) {
-      setError(err.message || 'Failed to reset password');
+      setError(formatErr(err, 'Failed to reset password'));
     } finally {
       setIsLoading(false);
     }
@@ -104,7 +120,7 @@ export default function ForgotPasswordPage() {
 
         {error && (
           <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3 rounded-xl mb-4 text-xs font-medium">
-            {error}
+            {formatErr(error, 'An error occurred')}
           </div>
         )}
         {successMessage && (
