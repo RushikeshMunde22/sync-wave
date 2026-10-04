@@ -53,6 +53,9 @@ const configSchema = z.object({
   
   DMCA_CONTACT: z.string().optional(),
   ANNOUNCEMENT_BANNER: z.string().optional(),
+  
+  EMAIL_USER: z.string().optional(),
+  EMAIL_PASS: z.string().optional(),
 });
 
 type Config = z.infer<typeof configSchema>;

@@ -1,22 +1,25 @@
 import { MusicProvider, SearchResult, Track } from './provider.interface.js';
 import { AudiusProvider } from './audius.provider.js';
 import { JamendoProvider } from './jamendo.provider.js';
+import { ITunesProvider } from './itunes.provider.js';
 
 export class ProviderManager {
   private providers: Map<string, MusicProvider> = new Map();
-  private primary: MusicProvider;
-  private secondary: MusicProvider | null = null;
+  private audius: AudiusProvider;
+  private itunes: ITunesProvider;
+  private jamendo: JamendoProvider | null = null;
   private healthStatuses: Record<string, boolean> = {};
 
   constructor() {
-    this.primary = new AudiusProvider();
-    this.providers.set('audius', this.primary);
-    
-    // Fallback to process.env if env object isn't configured with it
+    this.audius = new AudiusProvider();
+    this.itunes = new ITunesProvider();
+    this.providers.set('audius', this.audius);
+    this.providers.set('itunes', this.itunes);
+
     const jamendoClientId = process.env.JAMENDO_CLIENT_ID;
     if (jamendoClientId) {
-      this.secondary = new JamendoProvider(jamendoClientId);
-      this.providers.set('jamendo', this.secondary);
+      this.jamendo = new JamendoProvider(jamendoClientId);
+      this.providers.set('jamendo', this.jamendo);
     }
 
     this.checkHealth();
@@ -33,38 +36,64 @@ export class ProviderManager {
     return this.healthStatuses;
   }
 
-  private async tryWithFallback<T>(operation: (provider: MusicProvider) => Promise<T>, isSearchResult = false): Promise<T> {
-    if (this.healthStatuses['audius'] !== false) {
-      try {
-        const result = await operation(this.primary);
-        if (!isSearchResult || (result as unknown as SearchResult).tracks.length > 0) {
-           return result;
-        }
-      } catch (e) {
-        console.error('Primary provider operation failed:', e);
-      }
-    }
-    
-    if (this.secondary && this.healthStatuses['jamendo'] !== false) {
-      try {
-         return await operation(this.secondary);
-      } catch (e) {
-         console.error('Secondary provider operation failed:', e);
-      }
-    }
-
-    if (isSearchResult) {
-      return { tracks: [], hasMore: false } as unknown as T;
-    }
-    throw new Error('All providers failed');
-  }
-
   async search(query: string, limit = 20, offset = 0): Promise<SearchResult> {
-    return this.tryWithFallback(p => p.search(query, limit, offset), true);
+    const promises: Promise<SearchResult>[] = [
+      this.itunes.search(query, limit, offset).catch(() => ({ tracks: [], hasMore: false })),
+      this.audius.search(query, limit, offset).catch(() => ({ tracks: [], hasMore: false })),
+    ];
+
+    if (this.jamendo) {
+      promises.push(this.jamendo.search(query, limit, offset).catch(() => ({ tracks: [], hasMore: false })));
+    }
+
+    const results = await Promise.all(promises);
+    const combinedTracks: Track[] = [];
+    const seenTitles = new Set<string>();
+
+    for (const res of results) {
+      for (const track of res.tracks) {
+        const key = `${track.title.toLowerCase().trim()}-${track.artist.toLowerCase().trim()}`;
+        if (!seenTitles.has(key)) {
+          seenTitles.add(key);
+          combinedTracks.push(track);
+        }
+      }
+    }
+
+    return {
+      tracks: combinedTracks.slice(0, limit),
+      hasMore: combinedTracks.length > limit || results.some(r => r.hasMore),
+    };
   }
 
   async trending(limit = 20, offset = 0, genre?: string): Promise<SearchResult> {
-    return this.tryWithFallback(p => p.trending(limit, offset, genre), true);
+    const promises: Promise<SearchResult>[] = [
+      this.itunes.trending(limit, offset, genre).catch(() => ({ tracks: [], hasMore: false })),
+      this.audius.trending(limit, offset, genre).catch(() => ({ tracks: [], hasMore: false })),
+    ];
+
+    if (this.jamendo) {
+      promises.push(this.jamendo.trending(limit, offset, genre).catch(() => ({ tracks: [], hasMore: false })));
+    }
+
+    const results = await Promise.all(promises);
+    const combinedTracks: Track[] = [];
+    const seenTitles = new Set<string>();
+
+    for (const res of results) {
+      for (const track of res.tracks) {
+        const key = `${track.title.toLowerCase().trim()}-${track.artist.toLowerCase().trim()}`;
+        if (!seenTitles.has(key)) {
+          seenTitles.add(key);
+          combinedTracks.push(track);
+        }
+      }
+    }
+
+    return {
+      tracks: combinedTracks.slice(0, limit),
+      hasMore: combinedTracks.length > limit,
+    };
   }
 
   async getTrack(providerName: string, providerTrackId: string): Promise<Track | null> {

@@ -1,4 +1,4 @@
-﻿import React, { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { useSocketStore } from './stores/socketStore';
@@ -21,6 +21,8 @@ import AdminGroups from './pages/admin/AdminGroups';
 import AdminModeration from './pages/admin/AdminModeration';
 import AdminSecurity from './pages/admin/AdminSecurity';
 import AdminSystem from './pages/admin/AdminSystem';
+import AdminFeedback from './pages/admin/AdminFeedback';
+import JoinGroupPage from './pages/JoinGroupPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthStore();
@@ -56,6 +58,7 @@ export default function App() {
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="dashboard" element={<AdminDashboard />} />
+          <Route path="feedback" element={<AdminFeedback />} />
           <Route path="users" element={<AdminUsers />} />
           <Route path="groups" element={<AdminGroups />} />
           <Route path="moderation" element={<AdminModeration />} />
@@ -68,6 +71,7 @@ export default function App() {
         <Route path="/room/:id" element={<ProtectedRoute><RoomPage /></ProtectedRoute>} />
         <Route path="/room/:id/settings" element={<ProtectedRoute><GroupSettingsPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+        <Route path="/join/:code" element={<ProtectedRoute><JoinGroupPage /></ProtectedRoute>} />
         
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

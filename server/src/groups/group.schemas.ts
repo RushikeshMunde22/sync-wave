@@ -1,17 +1,20 @@
 import { z } from 'zod';
 
 export const createGroupSchema = z.object({
-  name: z.string().min(1).max(50).trim()
+  name: z.string().min(1).max(50).trim(),
+  maxMembers: z.number().int().min(2).max(100).default(50).optional(),
+  theme: z.enum(['default', 'blossom', 'blizzard', 'sunset', 'cyberwave', 'lofi']).default('default').optional(),
 });
 
 export const joinGroupSchema = z.object({
-  code: z.string().length(8).regex(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/, 'Invalid invite code format')
+  code: z.string().trim().min(4).max(64)
 });
 
 export const updateGroupSchema = z.object({
   name: z.string().min(1).max(50).trim().optional(),
   membersCanControl: z.boolean().optional(),
-  maxMembers: z.number().int().min(2).max(200).optional()
+  maxMembers: z.number().int().min(2).max(100).optional(),
+  theme: z.enum(['default', 'blossom', 'blizzard', 'sunset', 'cyberwave', 'lofi']).optional(),
 });
 
 export const memberActionSchema = z.object({
@@ -22,4 +25,8 @@ export const memberActionSchema = z.object({
 export const inviteActionSchema = z.object({
   action: z.enum(['regenerate', 'revoke']),
   expiresIn: z.number().int().min(1).max(720).optional() // hours
+});
+
+export const importPlaylistSchema = z.object({
+  playlistId: z.string().uuid()
 });

@@ -60,7 +60,15 @@ function checkReactionRateLimit(userId: string): boolean {
   return true;
 }
 
+let activeIo: SocketIOServer<ClientToServerEvents, ServerToClientEvents> | null = null;
+
+export function getLiveConnectedUsersCount(): number {
+  if (!activeIo) return 0;
+  return activeIo.sockets?.sockets?.size || 0;
+}
+
 export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, ServerToClientEvents>) {
+  activeIo = io;
   const engine = new SyncEngine(io);
   engine.init();
 

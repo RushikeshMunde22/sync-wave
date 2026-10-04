@@ -233,6 +233,29 @@ export async function resetPasswordWithRecovery(email: string, recoveryCode: str
   return { newRecoveryCode: newRecovery.code };
 }
 
+export async function resetPasswordByEmail(email: string): Promise<{ tempPassword: string; user: User } | null> {
+  const user = findUserByEmail(email);
+  if (!user) return null;
+
+  // Generate a friendly 12-char secure alphanumeric password e.g. Sync-8a9F-2k4L
+  const charset = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let tempPassword = 'Sw!';
+  const bytes = crypto.randomBytes(9);
+  for (let i = 0; i < 9; i++) {
+    tempPassword += charset[bytes[i] % charset.length];
+  }
+
+  const passwordHash = await hashPassword(tempPassword);
+  getDb().prepare(`
+    UPDATE users 
+    SET password_hash = ? 
+    WHERE id = ?
+  `).run(passwordHash, user.id);
+
+  destroyAllUserSessions(user.id);
+  return { tempPassword, user };
+}
+
 export function deleteUser(userId: string): void {
   const db = getDb();
   db.transaction(() => {

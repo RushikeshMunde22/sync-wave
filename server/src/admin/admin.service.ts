@@ -1,11 +1,15 @@
 import { getDb } from '../db/database.js';
 import { logAudit } from './audit.service.js';
 import { randomBytes } from 'crypto';
+import { getLiveConnectedUsersCount } from '../sync/sync.handlers.js';
 
 export function getDashboardStats() {
   const db = getDb();
+  const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
   const onlineUsers = db.prepare("SELECT COUNT(*) as count FROM users WHERE datetime(last_seen_at) >= datetime('now', '-5 minutes')").get() as { count: number };
+  const liveSockets = getLiveConnectedUsersCount();
   const activeRooms = db.prepare('SELECT COUNT(*) as count FROM playback_state WHERE is_playing = 1').get() as { count: number };
+  const totalRooms = db.prepare('SELECT COUNT(*) as count FROM groups WHERE is_closed = 0').get() as { count: number };
   const tracksToday = db.prepare("SELECT COUNT(*) as count FROM queue_items WHERE date(added_at) = date('now')").get() as { count: number };
   const signupsWeek = db.prepare("SELECT COUNT(*) as count FROM users WHERE date(created_at) >= date('now', '-7 days')").get() as { count: number };
   
@@ -14,12 +18,15 @@ export function getDashboardStats() {
   const dbSizeBytes = dbSizeRow.page_count * pageSizeRow.page_size;
 
   return {
+    totalUsers: totalUsers.count,
+    liveUsersCount: Math.max(liveSockets, onlineUsers.count),
     onlineUsers: onlineUsers.count,
     activeRooms: activeRooms.count,
+    totalRooms: totalRooms.count,
     tracksPlayedToday: tracksToday.count,
     signupsThisWeek: signupsWeek.count,
     dbSizeBytes,
-    providerHealth: { audius: 'ok', jamendo: 'ok' }
+    providerHealth: { itunes: 'ok', audius: 'ok', jamendo: 'ok' }
   };
 }
 

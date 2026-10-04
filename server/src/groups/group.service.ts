@@ -11,6 +11,7 @@ export interface Group {
   inviteRevoked: boolean;
   membersCanControl: boolean;
   maxMembers: number;
+  theme: string;
   isClosed: boolean;
   createdAt: string;
 }
@@ -45,16 +46,22 @@ export const generateInviteCode = (): string => {
   return code;
 };
 
-export const createGroup = async (ownerId: string, name: string): Promise<Group> => {
+export const createGroup = async (
+  ownerId: string, 
+  name: string, 
+  options?: { maxMembers?: number; theme?: string }
+): Promise<Group> => {
   const db = getDb();
   const groupId = uuidv4();
   const inviteCode = generateInviteCode();
+  const maxMembers = options?.maxMembers || 50;
+  const theme = options?.theme || 'default';
   
   db.transaction(() => {
     db.prepare(`
-      INSERT INTO groups (id, name, owner_id, invite_code, invite_revoked, members_can_control, max_members, is_closed) 
-      VALUES (?, ?, ?, ?, 0, 0, 50, 0)
-    `).run(groupId, name, ownerId, inviteCode);
+      INSERT INTO groups (id, name, owner_id, invite_code, invite_revoked, members_can_control, max_members, theme, is_closed) 
+      VALUES (?, ?, ?, ?, 0, 0, ?, ?, 0)
+    `).run(groupId, name, ownerId, inviteCode, maxMembers, theme);
 
     db.prepare(`
       INSERT INTO group_members (group_id, user_id, role)
@@ -134,6 +141,31 @@ export const joinGroup = async (userId: string, code: string): Promise<{ group?:
     return { error: 'Your account is banned' };
   }
 
+  // Check if user was previously kicked
+  const kicked = db.prepare('SELECT 1 FROM group_kicked_users WHERE group_id = ? AND user_id = ?').get(group.id, userId);
+  if (kicked) {
+    const existingReq = db.prepare('SELECT id, status FROM group_join_requests WHERE group_id = ? AND user_id = ?').get(group.id, userId) as any;
+    if (!existingReq || existingReq.status === 'denied') {
+      const requestId = uuidv4();
+      db.prepare(`
+        INSERT OR REPLACE INTO group_join_requests (id, group_id, user_id, status, created_at)
+        VALUES (?, ?, ?, 'pending', ?)
+      `).run(requestId, group.id, userId, new Date().toISOString());
+      return { 
+        error: 'You were previously removed from this room. A join request has been sent to room moderators.', 
+        requiresApproval: true 
+      };
+    } else if (existingReq.status === 'pending') {
+      return { 
+        error: 'Your request to join this room is currently pending approval from room moderators.', 
+        requiresApproval: true 
+      };
+    }
+    // If approved, clear kick and request records
+    db.prepare('DELETE FROM group_kicked_users WHERE group_id = ? AND user_id = ?').run(group.id, userId);
+    db.prepare('DELETE FROM group_join_requests WHERE group_id = ? AND user_id = ?').run(group.id, userId);
+  }
+
   const isMember = await isGroupMember(userId, group.id);
   if (isMember) {
     return { error: 'Already a member of this group' };
@@ -195,7 +227,13 @@ export const kickMember = async (actorId: string, targetId: string, groupId: str
   if (actorRole === 'member') throw new Error('Unauthorized');
   if (targetRole === 'owner') throw new Error('Cannot kick owner');
   
-  db.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').run(groupId, targetId);
+  db.transaction(() => {
+    db.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').run(groupId, targetId);
+    db.prepare(`
+      INSERT OR REPLACE INTO group_kicked_users (group_id, user_id, kicked_by, kicked_at)
+      VALUES (?, ?, ?, datetime('now'))
+    `).run(groupId, targetId, actorId);
+  })();
 };
 
 export const promoteMember = async (actorId: string, targetId: string, groupId: string): Promise<void> => {
@@ -338,6 +376,78 @@ export const isGroupMember = async (userId: string, groupId: string): Promise<bo
   return role !== null;
 };
 
+export const getPendingJoinRequests = async (actorId: string, groupId: string) => {
+  const role = await getMemberRole(actorId, groupId);
+  if (role !== 'owner' && role !== 'admin') throw new Error('Unauthorized');
+
+  const db = getDb();
+  return db.prepare(`
+    SELECT r.id, r.user_id as userId, r.status, r.created_at as createdAt,
+           u.display_name as displayName, u.avatar_emoji as avatarEmoji, u.avatar_color as avatarColor
+    FROM group_join_requests r
+    JOIN users u ON r.user_id = u.id
+    WHERE r.group_id = ? AND r.status = 'pending'
+    ORDER BY r.created_at ASC
+  `).all(groupId);
+};
+
+export const handleJoinRequest = async (actorId: string, groupId: string, requestId: string, approve: boolean) => {
+  const role = await getMemberRole(actorId, groupId);
+  if (role !== 'owner' && role !== 'admin') throw new Error('Unauthorized');
+
+  const db = getDb();
+  const request = db.prepare('SELECT * FROM group_join_requests WHERE id = ? AND group_id = ?').get(requestId, groupId) as any;
+  if (!request) throw new Error('Request not found');
+
+  if (approve) {
+    db.transaction(() => {
+      db.prepare("UPDATE group_join_requests SET status = 'approved' WHERE id = ?").run(requestId);
+      db.prepare('DELETE FROM group_kicked_users WHERE group_id = ? AND user_id = ?').run(groupId, request.user_id);
+      db.prepare(`
+        INSERT OR IGNORE INTO group_members (group_id, user_id, role)
+        VALUES (?, ?, 'member')
+      `).run(groupId, request.user_id);
+    })();
+  } else {
+    db.prepare("UPDATE group_join_requests SET status = 'denied' WHERE id = ?").run(requestId);
+  }
+};
+
+export const importPlaylistToQueue = async (actorId: string, groupId: string, playlistId: string): Promise<number> => {
+  const db = getDb();
+  const role = await getMemberRole(actorId, groupId);
+  const group = await getGroup(groupId);
+  if (!role || (!group?.membersCanControl && role !== 'owner' && role !== 'admin')) {
+    throw new Error('You do not have permission to modify the queue in this room');
+  }
+
+  const tracks = db.prepare(`
+    SELECT pt.track_id as trackId, pt.position
+    FROM user_playlist_tracks pt
+    JOIN user_playlists p ON pt.playlist_id = p.id
+    WHERE pt.playlist_id = ? AND p.user_id = ?
+    ORDER BY pt.position ASC
+  `).all(playlistId, actorId) as { trackId: string; position: number }[];
+
+  if (tracks.length === 0) return 0;
+
+  const maxPosRow = db.prepare('SELECT COALESCE(MAX(position), 0) as max_pos FROM queue_items WHERE group_id = ?').get(groupId) as { max_pos: number };
+  let nextPos = maxPosRow.max_pos + 1;
+
+  db.transaction(() => {
+    const insertStmt = db.prepare(`
+      INSERT INTO queue_items (id, group_id, track_id, added_by, position)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    for (const t of tracks) {
+      insertStmt.run(uuidv4(), groupId, t.trackId, actorId, nextPos++);
+    }
+  })();
+
+  return tracks.length;
+};
+
 function mapGroupDbToModel(row: any): Group {
   return {
     id: row.id,
@@ -347,7 +457,8 @@ function mapGroupDbToModel(row: any): Group {
     inviteExpiresAt: row.invite_expires_at,
     inviteRevoked: Boolean(row.invite_revoked),
     membersCanControl: Boolean(row.members_can_control),
-    maxMembers: Number(row.max_members),
+    maxMembers: Number(row.max_members) || 50,
+    theme: row.theme || 'default',
     isClosed: Boolean(row.is_closed),
     createdAt: row.created_at
   };

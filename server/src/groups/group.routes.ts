@@ -2,15 +2,15 @@ import { Router } from 'express';
 import { requireAuth } from '../auth/auth.middleware.js';
 import { requireGroupMember, requireGroupAdmin, requireGroupOwner } from './group.middleware.js';
 import * as GroupService from './group.service.js';
-import { createGroupSchema, joinGroupSchema, updateGroupSchema, memberActionSchema, inviteActionSchema } from './group.schemas.js';
+import { createGroupSchema, joinGroupSchema, updateGroupSchema, memberActionSchema, inviteActionSchema, importPlaylistSchema } from './group.schemas.js';
 
 const router = Router();
 
 // Create group
 router.post('/', requireAuth, async (req, res, next) => {
   try {
-    const { name } = createGroupSchema.parse(req.body);
-    const group = await GroupService.createGroup(req.user!.id, name);
+    const { name, maxMembers, theme } = createGroupSchema.parse(req.body);
+    const group = await GroupService.createGroup(req.user!.id, name, { maxMembers, theme });
     res.status(201).json(group);
   } catch (error) {
     next(error);
@@ -161,6 +161,47 @@ router.post('/:id/invite', requireAuth, requireGroupMember, requireGroupAdmin, a
       await GroupService.revokeInviteCode(actorId, groupId);
       res.status(200).json({ message: 'Invite code revoked' });
     }
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get pending join requests
+router.get('/:id/requests', requireAuth, requireGroupMember, requireGroupAdmin, async (req, res, next) => {
+  try {
+    const requests = await GroupService.getPendingJoinRequests(req.user!.id, req.params.id as string);
+    res.json(requests);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Approve join request
+router.post('/:id/requests/:requestId/approve', requireAuth, requireGroupMember, requireGroupAdmin, async (req, res, next) => {
+  try {
+    await GroupService.handleJoinRequest(req.user!.id, req.params.id as string, req.params.requestId as string, true);
+    res.json({ success: true, message: 'Request approved' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Deny join request
+router.post('/:id/requests/:requestId/deny', requireAuth, requireGroupMember, requireGroupAdmin, async (req, res, next) => {
+  try {
+    await GroupService.handleJoinRequest(req.user!.id, req.params.id as string, req.params.requestId as string, false);
+    res.json({ success: true, message: 'Request denied' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Import personal playlist into room queue
+router.post('/:id/queue/import-playlist', requireAuth, requireGroupMember, async (req, res, next) => {
+  try {
+    const { playlistId } = importPlaylistSchema.parse(req.body);
+    const count = await GroupService.importPlaylistToQueue(req.user!.id, req.params.id as string, playlistId);
+    res.json({ success: true, importedCount: count });
   } catch (error) {
     next(error);
   }

@@ -14,12 +14,14 @@ import {
   destroySession, 
   findUserByEmail, 
   resetPasswordWithRecovery, 
+  resetPasswordByEmail,
   deleteUser, 
   updateProfile,
   checkPasswordStrength,
   rotateSession
 } from './auth.service.js';
 import { requireAuth } from './auth.middleware.js';
+import { sendPasswordRecoveryEmail, sendWelcomeEmail } from '../mail/mail.service.js';
 import { config } from '../config.js';
 
 const router = Router();
@@ -82,6 +84,9 @@ router.post(['/signup', '/register'], signupLimiter, async (req, res) => {
     
     res.cookie('syncwave_session', sessionId, cookieOptions);
 
+    // Non-blocking welcome email dispatch
+    sendWelcomeEmail(user.email, user.displayName).catch((e) => console.error('[Mail] Welcome error:', e));
+
     res.status(201).json({ user, recoveryCode });
   } catch (err: any) {
     res.status(400).json({ error: err.errors || err.message || 'Signup failed' });
@@ -141,13 +146,18 @@ router.put('/me', requireAuth, (req, res) => {
   }
 });
 
-router.post('/forgot-password', forgotPasswordLimiter, (req, res) => {
+router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
   try {
     const data = forgotPasswordSchema.parse(req.body);
-    findUserByEmail(data.email);
+    const resetResult = await resetPasswordByEmail(data.email);
+    if (resetResult) {
+      await sendPasswordRecoveryEmail(resetResult.user.email, resetResult.tempPassword, true);
+    }
     
-    // Generic response regardless of whether email exists
-    res.json({ message: 'If the email exists, instructions would be sent (or use your existing recovery code to reset)' });
+    res.json({
+      success: true,
+      message: 'If an account exists with this email, a temporary password has been sent to your registered email address.'
+    });
   } catch (err: any) {
     res.status(400).json({ error: err.errors || err.message || 'Invalid request' });
   }

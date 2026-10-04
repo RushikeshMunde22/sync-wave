@@ -50,6 +50,10 @@ export default function RoomPage() {
   const [searching, setSearching] = useState(false);
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [activeQueueTab, setActiveQueueTab] = useState<'queue' | 'search' | 'playlists'>('queue');
+  const [userPlaylists, setUserPlaylists] = useState<any[]>([]);
+  const [importingPlaylist, setImportingPlaylist] = useState(false);
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
 
   // Initialize socket connection
   useEffect(() => {
@@ -301,8 +305,62 @@ export default function RoomPage() {
     socket.emit('queue:remove', { groupId: id, queueItemId });
   };
 
+  // Poll join requests if host/admin
+  useEffect(() => {
+    if (!id || !isHostOrAdmin) return;
+    const fetchRequests = async () => {
+      try {
+        const res = await api.get(`/api/groups/${id}/requests`);
+        setPendingRequests(res.data || []);
+      } catch (err) {}
+    };
+    fetchRequests();
+    const interval = setInterval(fetchRequests, 6000);
+    return () => clearInterval(interval);
+  }, [id, isHostOrAdmin]);
+
+  useEffect(() => {
+    if (showQueueModal && activeQueueTab === 'playlists') {
+      api.get('/api/playlists').then((res) => {
+        setUserPlaylists(res.data?.playlists || []);
+      }).catch(() => {});
+    }
+  }, [showQueueModal, activeQueueTab]);
+
+  const handleApproveRequest = async (requestId: string) => {
+    try {
+      await api.post(`/api/groups/${id}/requests/${requestId}/approve`);
+      setPendingRequests((prev) => prev.filter((r) => r.id !== requestId));
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to approve request');
+    }
+  };
+
+  const handleDenyRequest = async (requestId: string) => {
+    try {
+      await api.post(`/api/groups/${id}/requests/${requestId}/deny`);
+      setPendingRequests((prev) => prev.filter((r) => r.id !== requestId));
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to deny request');
+    }
+  };
+
+  const handleImportPlaylist = async (playlistId: string) => {
+    try {
+      setImportingPlaylist(true);
+      const res = await api.post(`/api/groups/${id}/queue/import-playlist`, { playlistId });
+      alert(`Imported ${res.data?.importedCount || 0} tracks into room queue!`);
+      setShowQueueModal(false);
+    } catch (err: any) {
+      alert(err.message || 'Failed to import playlist');
+    } finally {
+      setImportingPlaylist(false);
+    }
+  };
+
   const copyInviteLink = () => {
-    const inviteUrl = `${window.location.origin}/join/${id}`;
+    const inviteCode = (roomState as any)?.inviteCode || id;
+    const inviteUrl = `https://syncwave.work.gd/join/${inviteCode}`;
     navigator.clipboard.writeText(inviteUrl);
     setCopiedInvite(true);
     setTimeout(() => setCopiedInvite(false), 2500);
@@ -319,8 +377,25 @@ export default function RoomPage() {
   const isPlaying = playback.isPlaying && !isLocallyPaused;
   const progressPercent = durationMs > 0 ? Math.min(100, (currentTimeMs / durationMs) * 100) : 0;
 
+  const roomTheme = (roomState as any)?.theme || 'default';
+  const themeGlowStyles: Record<string, string> = {
+    default: 'from-indigo-600/15 via-violet-900/10 to-transparent',
+    blossom: 'from-pink-500/20 via-rose-600/15 to-transparent',
+    blizzard: 'from-cyan-400/20 via-blue-600/15 to-transparent',
+    sunset: 'from-amber-500/20 via-rose-600/15 to-transparent',
+    cyberwave: 'from-fuchsia-500/25 via-cyan-500/15 to-transparent',
+    lofi: 'from-purple-900/20 via-neutral-900/40 to-transparent',
+  };
+
   return (
     <div className="min-h-screen bg-neutral-950 text-white flex flex-col select-none relative overflow-hidden">
+      {/* Dynamic Theme Glow Aura */}
+      <div
+        className={`absolute inset-0 bg-gradient-to-b ${
+          themeGlowStyles[roomTheme] || themeGlowStyles.default
+        } pointer-events-none transition-all duration-1000`}
+      />
+
       {/* Background artwork blur */}
       {currentTrack?.artworkUrl && (
         <div
@@ -404,6 +479,32 @@ export default function RoomPage() {
       {isAdminPaused && (
         <div className="z-30 bg-amber-500/20 border-b border-amber-500/40 text-amber-300 text-xs font-medium py-2 px-4 text-center">
           ⏸ Playback paused for everyone by {adminPausedBy || 'the room host'}.
+        </div>
+      )}
+
+      {/* Host Pending Rejoin Requests Banner */}
+      {isHostOrAdmin && pendingRequests.length > 0 && (
+        <div className="z-30 bg-amber-500/15 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between text-xs text-amber-200">
+          <div className="flex items-center gap-2">
+            <span>🔔</span>
+            <span>
+              <strong>{pendingRequests[0].displayName}</strong> requested to rejoin this room
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleApproveRequest(pendingRequests[0].id)}
+              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg shadow transition-colors"
+            >
+              Approve
+            </button>
+            <button
+              onClick={() => handleDenyRequest(pendingRequests[0].id)}
+              className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg transition-colors"
+            >
+              Deny
+            </button>
+          </div>
         </div>
       )}
 
@@ -613,29 +714,97 @@ export default function RoomPage() {
                 </button>
               </div>
 
-              {/* Tabs / Search input */}
-              <div className="mt-4 relative">
-                <input
-                  type="text"
-                  placeholder="Search Audius & Jamendo tracks..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 pl-10 text-sm outline-none focus:border-indigo-500 transition-colors"
-                />
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500">🔍</span>
+              {/* Tabs */}
+              <div className="grid grid-cols-3 gap-1 bg-neutral-950 p-1 rounded-xl mt-4 text-xs font-semibold">
+                <button
+                  onClick={() => setActiveQueueTab('queue')}
+                  className={`py-2 rounded-lg transition-colors ${
+                    activeQueueTab === 'queue' ? 'bg-indigo-600 text-white' : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  Queue ({queue.length})
+                </button>
+                <button
+                  onClick={() => setActiveQueueTab('search')}
+                  className={`py-2 rounded-lg transition-colors ${
+                    activeQueueTab === 'search' ? 'bg-indigo-600 text-white' : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  🔍 Search Music
+                </button>
+                <button
+                  onClick={() => setActiveQueueTab('playlists')}
+                  className={`py-2 rounded-lg transition-colors ${
+                    activeQueueTab === 'playlists' ? 'bg-indigo-600 text-white' : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  📁 My Playlists
+                </button>
               </div>
+
+              {/* Search input (when on search tab or typing) */}
+              {activeQueueTab === 'search' && (
+                <div className="mt-3 relative">
+                  <input
+                    type="text"
+                    placeholder="Search iTunes, Audius & Jamendo tracks..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 pl-10 text-sm outline-none focus:border-indigo-500 transition-colors text-white"
+                    autoFocus
+                  />
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500">🔍</span>
+                </div>
+              )}
 
               {/* Scrollable list */}
               <div className="flex-1 overflow-y-auto mt-4 space-y-4 pr-1">
-                {searchQuery ? (
+                {activeQueueTab === 'playlists' ? (
+                  <div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
+                      Import Personal Playlist Into Room Queue
+                    </h3>
+                    {userPlaylists.length === 0 ? (
+                      <div className="py-8 text-center text-xs text-neutral-500 border border-dashed border-neutral-800 rounded-2xl p-4">
+                        No playlists found. Create playlists in your Profile to import them here!
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {userPlaylists.map((pl) => (
+                          <div
+                            key={pl.id}
+                            className="flex items-center justify-between p-3 rounded-2xl bg-neutral-950 border border-neutral-800"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <span className="text-xl">🎶</span>
+                              <div>
+                                <p className="text-xs font-bold text-white">{pl.name}</p>
+                                <p className="text-[10px] text-neutral-400">{pl.trackCount} tracks</p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleImportPlaylist(pl.id)}
+                              disabled={importingPlaylist || pl.trackCount === 0}
+                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl shadow disabled:opacity-40"
+                            >
+                              {importingPlaylist ? 'Importing...' : '+ Import All'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : activeQueueTab === 'search' ? (
                   <div>
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
                       Search Results
                     </h3>
                     {searching ? (
-                      <div className="py-8 text-center text-sm text-neutral-500">Searching music...</div>
+                      <div className="py-8 text-center text-sm text-neutral-500">Searching worldwide music...</div>
                     ) : searchResults.length === 0 ? (
-                      <div className="py-8 text-center text-sm text-neutral-500">No tracks found.</div>
+                      <div className="py-8 text-center text-sm text-neutral-500">
+                        {searchQuery ? 'No tracks found.' : 'Type any song or artist above to search!'}
+                      </div>
                     ) : (
                       <div className="space-y-2">
                         {searchResults.map((t) => (
@@ -656,7 +825,7 @@ export default function RoomPage() {
                             </div>
                             <button
                               onClick={() => handleAddToQueue(t)}
-                              className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold rounded-full shadow"
+                              className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold rounded-full shadow whitespace-nowrap ml-2"
                             >
                               + Queue
                             </button>
@@ -667,12 +836,20 @@ export default function RoomPage() {
                   </div>
                 ) : (
                   <div>
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
-                      Upcoming In Queue ({queue.length})
-                    </h3>
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                        Upcoming In Queue ({queue.length})
+                      </h3>
+                      <button
+                        onClick={() => setActiveQueueTab('search')}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold"
+                      >
+                        + Add Songs
+                      </button>
+                    </div>
                     {queue.length === 0 ? (
                       <div className="py-8 text-center text-sm text-neutral-500">
-                        Queue is empty. Type a song or artist above to add tracks!
+                        Queue is empty. Click "+ Add Songs" to search and add tracks!
                       </div>
                     ) : (
                       <div className="space-y-2">

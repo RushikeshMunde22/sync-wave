@@ -16,6 +16,8 @@ import { authRouter } from './auth/auth.routes.js';
 import { groupRouter } from './groups/group.routes.js';
 import { musicRouter } from './music/music.routes.js';
 import { adminRouter } from './admin/admin.routes.js';
+import { feedbackRouter } from './feedback/feedback.routes.js';
+import { playlistRouter } from './playlists/playlist.routes.js';
 import { setupSocketHandlers } from './sync/sync.handlers.js';
 import { sessionMiddleware, csrfProtection } from './auth/auth.middleware.js';
 
@@ -24,6 +26,23 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const httpServer = createServer(app);
+
+const allowedOrigins = [
+  config.BASE_URL,
+  'https://syncwave.work.gd',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173',
+];
+
+const corsOriginChecker = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+  if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.work.gd')) {
+    callback(null, true);
+  } else {
+    callback(null, true);
+  }
+};
 
 // ── Security middleware ──────────────────────────────────
 app.use(helmet({
@@ -34,8 +53,17 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
-      mediaSrc: ["'self'", 'https:', 'blob:'],
-      connectSrc: ["'self'", 'wss:', 'ws:', 'https://discoveryprovider.audius.co', 'https://api.jamendo.com'],
+      mediaSrc: ["'self'", 'https:', 'blob:', 'data:'],
+      connectSrc: [
+        "'self'", 
+        'wss:', 
+        'ws:', 
+        'https://discoveryprovider.audius.co', 
+        'https://api.jamendo.com', 
+        'https://itunes.apple.com', 
+        'https://*.apple.com',
+        'https://audio-ssl.itunes.apple.com'
+      ],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
@@ -52,7 +80,7 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  origin: config.BASE_URL,
+  origin: corsOriginChecker,
   credentials: true,
 }));
 
@@ -90,11 +118,13 @@ app.use('/api/auth', authRouter);
 app.use('/api/groups', groupRouter);
 app.use('/api/music', musicRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/feedback', feedbackRouter);
+app.use('/api/playlists', playlistRouter);
 
 // ── Socket.IO ────────────────────────────────────────────
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: config.BASE_URL,
+    origin: corsOriginChecker,
     credentials: true,
   },
   connectionStateRecovery: {

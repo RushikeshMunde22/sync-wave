@@ -15,7 +15,15 @@ export default function LoginPage() {
     setError('');
     try {
       await login(email, password);
-      navigate('/');
+      const currentUser = useAuthStore.getState().user;
+      if (
+        currentUser?.role === 'superadmin' ||
+        email.toLowerCase() === 'munderushikesh66@gmail.com'
+      ) {
+        navigate('/admin/dashboard');
+      } else {
+        navigate('/');
+      }
     } catch (err: any) {
       setError(err.message || 'Login failed');
     }
