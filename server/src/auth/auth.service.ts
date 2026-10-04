@@ -75,8 +75,8 @@ export async function createUser(data: {
     email,
     passwordHash,
     data.displayName,
-    data.avatarEmoji || null,
-    data.avatarColor || null,
+    data.avatarEmoji || '🎧',
+    data.avatarColor || '#6366f1',
     'user',
     0,
     recoveryCodeHash,
@@ -148,16 +148,17 @@ export async function verifyLogin(email: string, password: string): Promise<User
   };
 }
 
-export function createSession(userId: string, userAgent: string): string {
+export function createSession(userId: string, userAgent?: string): string {
   const db = getDb();
   const sessionId = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
   const now = new Date().toISOString();
+  const userAgentHash = userAgent ? crypto.createHash('sha256').update(userAgent).digest('hex') : null;
 
   db.prepare(`
-    INSERT INTO sessions (id, user_id, user_agent, expires_at, created_at)
+    INSERT INTO sessions (id, user_id, user_agent_hash, expires_at, created_at)
     VALUES (?, ?, ?, ?, ?)
-  `).run(sessionId, userId, userAgent, expiresAt, now);
+  `).run(sessionId, userId, userAgentHash, expiresAt, now);
 
   return sessionId;
 }

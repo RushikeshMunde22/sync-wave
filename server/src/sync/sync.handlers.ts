@@ -1,55 +1,62 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
-import { SyncEngine } from './sync.engine';
-import { socketAuthMiddleware, socketRateLimiter, validateSocketPayload, SessionUser } from './sync.middleware';
 import { z } from 'zod';
-import { ClientToServerEvents, ServerToClientEvents, MemberPresence } from './sync.events';
+import { SyncEngine } from './sync.engine.js';
+import {
+  ClientToServerEvents,
+  ServerToClientEvents,
+  MemberPresence
+} from './sync.events.js';
+import { socketRateLimiter, validateSocketPayload, socketAuthMiddleware } from './sync.middleware.js';
+import { User } from '../auth/auth.service.js';
+import { getGroup, getMemberRole } from '../groups/group.service.js';
+
+// Schemas for validating incoming payloads
+const groupIdSchema = z.object({ groupId: z.string().min(1) });
+const playSchema = z.object({ groupId: z.string().min(1) });
+const pauseSchema = z.object({ groupId: z.string().min(1), forEveryone: z.boolean() });
+const seekSchema = z.object({ groupId: z.string().min(1), positionMs: z.number().min(0) });
+const skipSchema = z.object({ groupId: z.string().min(1) });
+const endedSchema = z.object({ groupId: z.string().min(1), trackId: z.string().min(1), version: z.number() });
+const loadTrackSchema = z.object({ groupId: z.string().min(1), trackId: z.string().min(1) });
+const resyncSchema = z.object({ groupId: z.string().min(1) });
+const addQueueSchema = z.object({ groupId: z.string().min(1), trackId: z.string().min(1), playNext: z.boolean().optional() });
+const removeQueueSchema = z.object({ groupId: z.string().min(1), queueItemId: z.string().min(1) });
+const reorderQueueSchema = z.object({ groupId: z.string().min(1), queueItemId: z.string().min(1), newPosition: z.number().min(0) });
+const reactionSchema = z.object({ groupId: z.string().min(1), emoji: z.string().min(1) });
+const skipvoteSchema = z.object({ groupId: z.string().min(1) });
+const presenceSchema = z.object({ groupId: z.string().min(1), status: z.enum(['listening', 'paused', 'buffering']) });
 
 const ALLOWED_EMOJIS = ['❤️', '🔥', '😂', '😮', '👏', '🎶', '😭', '🙌'];
 
-// Zod schemas for validation
-const groupIdSchema = z.object({ groupId: z.string() });
-const playSchema = groupIdSchema;
-const pauseSchema = z.object({ groupId: z.string(), forEveryone: z.boolean() });
-const seekSchema = z.object({ groupId: z.string(), positionMs: z.number().min(0) });
-const loadTrackSchema = z.object({ groupId: z.string(), trackId: z.string() });
-const skipSchema = groupIdSchema;
-const endedSchema = z.object({ groupId: z.string(), trackId: z.string(), version: z.number() });
-const resyncSchema = groupIdSchema;
-const addQueueSchema = z.object({ groupId: z.string(), trackId: z.string(), playNext: z.boolean().optional() });
-const removeQueueSchema = z.object({ groupId: z.string(), queueItemId: z.string() });
-const reorderQueueSchema = z.object({ groupId: z.string(), queueItemId: z.string(), newPosition: z.number().min(0) });
-const reactionSchema = z.object({ groupId: z.string(), emoji: z.string() });
-const skipvoteSchema = groupIdSchema;
-const presenceSchema = z.object({ groupId: z.string(), status: z.enum(['listening', 'paused', 'buffering']) });
-
-// Per-user reaction rate limiting
-const userReactionLimits = new Map<string, { countSec: number; resetSec: number; countMin: number; resetMin: number }>();
+// In-memory rate limiting for reactions: 5 per sec, 30 per min
+const reactionLimits = new Map<string, { secCount: number; secReset: number; minCount: number; minReset: number }>();
 
 function checkReactionRateLimit(userId: string): boolean {
   const now = Date.now();
-  let limit = userReactionLimits.get(userId);
+  let limit = reactionLimits.get(userId);
 
   if (!limit) {
-    limit = { countSec: 1, resetSec: now + 1000, countMin: 1, resetMin: now + 60000 };
-    userReactionLimits.set(userId, limit);
+    limit = { secCount: 1, secReset: now + 1000, minCount: 1, minReset: now + 60000 };
+    reactionLimits.set(userId, limit);
     return true;
   }
 
-  if (now > limit.resetSec) {
-    limit.countSec = 0;
-    limit.resetSec = now + 1000;
-  }
-  if (now > limit.resetMin) {
-    limit.countMin = 0;
-    limit.resetMin = now + 60000;
+  if (now > limit.secReset) {
+    limit.secCount = 0;
+    limit.secReset = now + 1000;
   }
 
-  limit.countSec++;
-  limit.countMin++;
+  if (now > limit.minReset) {
+    limit.minCount = 0;
+    limit.minReset = now + 60000;
+  }
 
-  if (limit.countSec > 5 || limit.countMin > 30) {
+  if (limit.secCount >= 5 || limit.minCount >= 30) {
     return false;
   }
+
+  limit.secCount++;
+  limit.minCount++;
   return true;
 }
 
@@ -61,37 +68,45 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
   io.use(socketAuthMiddleware);
 
   io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>) => {
-    const user = socket.data.user as SessionUser;
-    console.log(`User connected: ${user.id} (${socket.id})`);
+    const user = socket.data.user as User;
+    if (!user) {
+      socket.disconnect(true);
+      return;
+    }
+
+    console.log(`[Socket] User connected: ${user.id} (${socket.id})`);
+    const userRooms = new Set<string>();
 
     // Apply per-socket rate limiting via socket.use
-    socket.use(([event, ...args], next) => {
+    socket.use((_packet, next) => {
       socketRateLimiter(socket as any, next);
     });
-
-    const getUserRole = (groupId: string, userId: string) => {
-      // Stub: in reality, fetch from DB
-      return 'member'; 
-    };
-
-    const getGroupInfo = (groupId: string) => {
-      // Stub
-      return { name: `Group ${groupId}`, membersCanControl: true };
-    };
 
     socket.on('room:join', async (data, ack) => {
       try {
         const { groupId } = validateSocketPayload(groupIdSchema, data);
-        socket.join(groupId);
+        
+        // Verify real membership
+        const role = await getMemberRole(user.id, groupId);
+        if (!role) {
+          ack({ success: false, error: 'You are not a member of this group' });
+          return;
+        }
 
-        const groupInfo = getGroupInfo(groupId);
-        const role = getUserRole(groupId, user.id);
+        const group = await getGroup(groupId);
+        if (!group) {
+          ack({ success: false, error: 'Group not found' });
+          return;
+        }
+
+        socket.join(groupId);
+        userRooms.add(groupId);
 
         const presence: MemberPresence = {
           userId: user.id,
-          displayName: user.name,
-          avatarEmoji: user.avatarEmoji,
-          avatarColor: user.avatarColor,
+          displayName: user.displayName,
+          avatarEmoji: user.avatarEmoji || '🎵',
+          avatarColor: user.avatarColor || '#6366f1',
           role,
           status: 'listening'
         };
@@ -107,11 +122,11 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
           success: true,
           state: {
             groupId,
-            groupName: groupInfo.name,
+            groupName: group.name,
             playback,
             queue,
             members,
-            membersCanControl: groupInfo.membersCanControl,
+            membersCanControl: group.membersCanControl,
             myRole: role
           }
         });
@@ -124,11 +139,10 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
       try {
         const { groupId } = validateSocketPayload(groupIdSchema, data);
         socket.leave(groupId);
+        userRooms.delete(groupId);
         engine.removeMember(groupId, user.id);
         socket.to(groupId).emit('room:member-left', { userId: user.id });
-      } catch (err) {
-        // ignore invalid payload
-      }
+      } catch (err) { }
     });
 
     socket.on('sync:ping', (data, ack) => {
@@ -138,28 +152,60 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
     socket.on('playback:play', async (data) => {
       try {
         const { groupId } = validateSocketPayload(playSchema, data);
-        await engine.play(groupId, user.id);
+        const role = await getMemberRole(user.id, groupId);
+        const group = await getGroup(groupId);
+        if (role === 'owner' || role === 'admin' || group?.membersCanControl) {
+          await engine.play(groupId, user.id);
+        }
       } catch (err) { }
     });
 
     socket.on('playback:pause', async (data) => {
       try {
         const { groupId, forEveryone } = validateSocketPayload(pauseSchema, data);
-        await engine.pause(groupId, user.id, forEveryone);
+        if (forEveryone) {
+          const role = await getMemberRole(user.id, groupId);
+          const group = await getGroup(groupId);
+          if (role === 'owner' || role === 'admin' || group?.membersCanControl) {
+            await engine.pause(groupId, user.id, true);
+          }
+        } else {
+          await engine.pause(groupId, user.id, false);
+        }
       } catch (err) { }
     });
 
     socket.on('playback:seek', async (data) => {
       try {
         const { groupId, positionMs } = validateSocketPayload(seekSchema, data);
-        await engine.seek(groupId, user.id, positionMs);
+        const role = await getMemberRole(user.id, groupId);
+        const group = await getGroup(groupId);
+        if (role === 'owner' || role === 'admin' || group?.membersCanControl) {
+          await engine.seek(groupId, user.id, positionMs);
+        }
       } catch (err) { }
     });
 
     socket.on('playback:skip', async (data) => {
       try {
         const { groupId } = validateSocketPayload(skipSchema, data);
-        await engine.skip(groupId, user.id);
+        const role = await getMemberRole(user.id, groupId);
+        if (role === 'owner' || role === 'admin') {
+          await engine.skip(groupId, user.id);
+        } else {
+          // Cast skip vote
+          const result = engine.castSkipVote(groupId, user.id);
+          if (result.passed) {
+            io.to(groupId).emit('skipvote:passed');
+            await engine.skip(groupId, user.id);
+          } else {
+            io.to(groupId).emit('skipvote:updated', {
+              votesNeeded: result.votesNeeded,
+              currentVotes: result.currentVotes,
+              voters: [user.id]
+            });
+          }
+        }
       } catch (err) { }
     });
 
@@ -173,7 +219,11 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
     socket.on('playback:load-track', async (data) => {
       try {
         const { groupId, trackId } = validateSocketPayload(loadTrackSchema, data);
-        await engine.loadTrack(groupId, user.id, trackId);
+        const role = await getMemberRole(user.id, groupId);
+        const group = await getGroup(groupId);
+        if (role === 'owner' || role === 'admin' || group?.membersCanControl) {
+          await engine.loadTrack(groupId, user.id, trackId);
+        }
       } catch (err) { }
     });
 
@@ -195,14 +245,22 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
     socket.on('queue:remove', async (data) => {
       try {
         const { groupId, queueItemId } = validateSocketPayload(removeQueueSchema, data);
-        await engine.removeFromQueue(groupId, user.id, queueItemId);
+        const role = await getMemberRole(user.id, groupId);
+        const group = await getGroup(groupId);
+        if (role === 'owner' || role === 'admin' || group?.membersCanControl) {
+          await engine.removeFromQueue(groupId, user.id, queueItemId);
+        }
       } catch (err) { }
     });
 
     socket.on('queue:reorder', async (data) => {
       try {
         const { groupId, queueItemId, newPosition } = validateSocketPayload(reorderQueueSchema, data);
-        await engine.reorderQueue(groupId, user.id, queueItemId, newPosition);
+        const role = await getMemberRole(user.id, groupId);
+        const group = await getGroup(groupId);
+        if (role === 'owner' || role === 'admin' || group?.membersCanControl) {
+          await engine.reorderQueue(groupId, user.id, queueItemId, newPosition);
+        }
       } catch (err) { }
     });
 
@@ -218,25 +276,25 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
 
         io.to(groupId).emit('reaction:received', {
           userId: user.id,
-          userName: user.name,
+          userName: user.displayName,
           emoji
         });
       } catch (err) { }
     });
 
-    socket.on('skipvote:cast', (data) => {
+    socket.on('skipvote:cast', async (data) => {
       try {
         const { groupId } = validateSocketPayload(skipvoteSchema, data);
         const result = engine.castSkipVote(groupId, user.id);
         
         if (result.passed) {
           io.to(groupId).emit('skipvote:passed');
-          engine.skip(groupId, user.id).catch(console.error);
+          await engine.skip(groupId, user.id);
         } else {
           io.to(groupId).emit('skipvote:updated', {
             votesNeeded: result.votesNeeded,
             currentVotes: result.currentVotes,
-            voters: [user.id] // Stub, would track actual voters
+            voters: [user.id]
           });
         }
       } catch (err) { }
@@ -250,10 +308,12 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
     });
 
     socket.on('disconnect', () => {
-      console.log(`User disconnected: ${user.id}`);
-      // Remove user from all groups they were in
-      // For a proper implementation we should track which rooms the user is in
-      // and call engine.removeMember(groupId, user.id) for each
+      console.log(`[Socket] User disconnected: ${user.id}`);
+      for (const gId of userRooms) {
+        engine.removeMember(gId, user.id);
+        socket.to(gId).emit('room:member-left', { userId: user.id });
+      }
+      userRooms.clear();
     });
   });
 }

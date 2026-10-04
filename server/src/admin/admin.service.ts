@@ -1,15 +1,14 @@
 import { getDb } from '../db/database.js';
 import { logAudit } from './audit.service.js';
+import { randomBytes } from 'crypto';
 
 export function getDashboardStats() {
   const db = getDb();
-  const onlineUsers = db.prepare('SELECT COUNT(*) as count FROM users WHERE datetime(last_seen_at) >= datetime("now", "-5 minutes")').get() as { count: number };
+  const onlineUsers = db.prepare("SELECT COUNT(*) as count FROM users WHERE datetime(last_seen_at) >= datetime('now', '-5 minutes')").get() as { count: number };
   const activeRooms = db.prepare('SELECT COUNT(*) as count FROM playback_state WHERE is_playing = 1').get() as { count: number };
-  // tracks played today: we don't have play history in schema, so let's mock or just return queue items added today
-  const tracksToday = db.prepare('SELECT COUNT(*) as count FROM queue_items WHERE date(added_at) = date("now")').get() as { count: number };
-  const signupsWeek = db.prepare('SELECT COUNT(*) as count FROM users WHERE date(created_at) >= date("now", "-7 days")').get() as { count: number };
+  const tracksToday = db.prepare("SELECT COUNT(*) as count FROM queue_items WHERE date(added_at) = date('now')").get() as { count: number };
+  const signupsWeek = db.prepare("SELECT COUNT(*) as count FROM users WHERE date(created_at) >= date('now', '-7 days')").get() as { count: number };
   
-  // db size
   const dbSizeRow = db.prepare('PRAGMA page_count').get() as { page_count: number };
   const pageSizeRow = db.prepare('PRAGMA page_size').get() as { page_size: number };
   const dbSizeBytes = dbSizeRow.page_count * pageSizeRow.page_size;
@@ -31,7 +30,7 @@ export function listUsers(search: string, limit: number, offset: number) {
   const params: any[] = [];
   
   if (search) {
-    const searchPattern = \%\%\;
+    const searchPattern = `%${search}%`;
     query += ' WHERE email LIKE ? OR display_name LIKE ?';
     countQuery += ' WHERE email LIKE ? OR display_name LIKE ?';
     params.push(searchPattern, searchPattern);
@@ -91,7 +90,7 @@ export function listGroups(search: string, limit: number, offset: number) {
   const params: any[] = [];
   
   if (search) {
-    const searchPattern = \%\%\;
+    const searchPattern = `%${search}%`;
     query += ' WHERE g.name LIKE ?';
     countQuery += ' WHERE g.name LIKE ?';
     params.push(searchPattern);
@@ -120,8 +119,7 @@ export function deleteGroup(actorId: string, groupId: string) {
 
 export function regenerateInviteCode(actorId: string, groupId: string) {
   const db = getDb();
-  const crypto = require('crypto');
-  const code = crypto.randomBytes(4).toString('hex');
+  const code = randomBytes(4).toString('hex');
   db.prepare('UPDATE groups SET invite_code = ? WHERE id = ?').run(code, groupId);
   logAudit(actorId, 'group.regenerate_code', groupId, { code });
   return code;
@@ -175,7 +173,7 @@ export function getAuditLog(filters: any, limit: number, offset: number) {
 
 export function getSystemInfo() {
   const db = getDb();
-  const migrationsRow = db.prepare('SELECT id FROM _migrations ORDER BY id DESC LIMIT 1').get() as { id: number };
+  const migrationsRow = db.prepare('SELECT id FROM _migrations ORDER BY id DESC LIMIT 1').get() as { id: number } | undefined;
   
   const dbSizeRow = db.prepare('PRAGMA page_count').get() as { page_count: number };
   const pageSizeRow = db.prepare('PRAGMA page_size').get() as { page_size: number };
@@ -191,7 +189,6 @@ export function getSystemInfo() {
 }
 
 export function getAnalytics() {
-  // basic implementation
   return { signupsOverTime: [], activeUsers: 0, topTracks: [] };
 }
 

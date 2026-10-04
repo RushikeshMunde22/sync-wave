@@ -1,6 +1,6 @@
 import { LRUCache } from 'lru-cache';
 import { Track } from './provider.interface.js';
-import db from '../db/database.js';
+import { getDb } from '../db/database.js';
 
 interface CacheStats {
   memoryEntries: number;
@@ -20,15 +20,30 @@ class MusicCache {
 
   async cacheTrack(track: Track): Promise<void> {
     try {
-      await db.run(
-        `INSERT INTO tracks (id, provider, providerTrackId, title, artist, album, artworkUrl, durationMs, streamUrl, license, attribution, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-         ON CONFLICT(id) DO UPDATE SET 
-         title=excluded.title, 
-         artist=excluded.artist, 
-         streamUrl=excluded.streamUrl,
-         updated_at=CURRENT_TIMESTAMP`,
-        [track.id, track.provider, track.providerTrackId, track.title, track.artist, track.album || null, track.artworkUrl || null, track.durationMs, track.streamUrl || null, track.license || null, track.attribution || null]
+      const db = getDb();
+      db.prepare(`
+        INSERT INTO tracks (
+          id, provider, provider_track_id, title, artist, album,
+          artwork_url, duration_ms, stream_url_cached, license, attribution, cached_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        ON CONFLICT(provider, provider_track_id) DO UPDATE SET 
+          title = excluded.title, 
+          artist = excluded.artist, 
+          stream_url_cached = excluded.stream_url_cached,
+          artwork_url = excluded.artwork_url,
+          cached_at = datetime('now')
+      `).run(
+        track.id,
+        track.provider,
+        track.providerTrackId,
+        track.title,
+        track.artist,
+        track.album || null,
+        track.artworkUrl || null,
+        track.durationMs,
+        track.streamUrl || null,
+        track.license || null,
+        track.attribution || null
       );
     } catch (err) {
       console.error('Failed to cache track in DB:', err);
@@ -37,20 +52,25 @@ class MusicCache {
 
   async getCachedTrack(provider: string, providerTrackId: string): Promise<Track | null> {
     try {
-      const id = `${provider}:${providerTrackId}`;
-      const row: any = await db.get(`SELECT * FROM tracks WHERE id = ? AND updated_at > datetime('now', '-1 day')`, [id]);
+      const db = getDb();
+      const row = db.prepare(`
+        SELECT * FROM tracks 
+        WHERE provider = ? AND provider_track_id = ? 
+          AND datetime(cached_at) > datetime('now', '-1 day')
+      `).get(provider, providerTrackId) as any;
+
       if (!row) return null;
       
       return {
         id: row.id,
         provider: row.provider as any,
-        providerTrackId: row.providerTrackId,
+        providerTrackId: row.provider_track_id,
         title: row.title,
         artist: row.artist,
         album: row.album || undefined,
-        artworkUrl: row.artworkUrl || undefined,
-        durationMs: row.durationMs,
-        streamUrl: row.streamUrl || undefined,
+        artworkUrl: row.artwork_url || undefined,
+        durationMs: row.duration_ms,
+        streamUrl: row.stream_url_cached || undefined,
         license: row.license || undefined,
         attribution: row.attribution || undefined,
       };
@@ -70,14 +90,20 @@ class MusicCache {
 
   clearCache(): void {
     this.searchCache.clear();
-    db.run(`DELETE FROM tracks WHERE updated_at <= datetime('now', '-1 day')`).catch(() => {});
+    try {
+      const db = getDb();
+      db.prepare(`DELETE FROM tracks WHERE datetime(cached_at) <= datetime('now', '-1 day')`).run();
+    } catch (err) {
+      console.error('Failed to clean tracks cache:', err);
+    }
   }
 
   async getCacheStats(): Promise<CacheStats> {
     let dbEntries = 0;
     try {
-       const res: any = await db.get(`SELECT COUNT(*) as count FROM tracks`);
-       dbEntries = res?.count || 0;
+      const db = getDb();
+      const res = db.prepare(`SELECT COUNT(*) as count FROM tracks`).get() as { count: number };
+      dbEntries = res?.count || 0;
     } catch (e) {}
 
     return {

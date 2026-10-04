@@ -49,7 +49,7 @@ export default function AdminDashboard() {
               <div key={provider} className="flex items-center justify-between">
                 <span className="capitalize text-gray-300">{provider}</span>
                 <span className="flex items-center gap-2">
-                  <span className={\`w-2 h-2 rounded-full \${status === 'ok' ? 'bg-green-500' : 'bg-red-500'}\`}></span>
+                  <span className={`w-2 h-2 rounded-full ${status === 'ok' ? 'bg-green-500' : 'bg-red-500'}`}></span>
                   <span className="text-sm text-gray-400">{status}</span>
                 </span>
               </div>

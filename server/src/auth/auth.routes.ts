@@ -51,7 +51,7 @@ const cookieOptions = {
   path: '/',
 };
 
-router.post('/signup', signupLimiter, async (req, res) => {
+router.post(['/signup', '/register'], signupLimiter, async (req, res) => {
   try {
     if (config.SIGNUPS_DISABLED) {
       return res.status(403).json({ error: 'Signups are currently disabled' });
@@ -144,12 +144,9 @@ router.put('/me', requireAuth, (req, res) => {
 router.post('/forgot-password', forgotPasswordLimiter, (req, res) => {
   try {
     const data = forgotPasswordSchema.parse(req.body);
-    const user = findUserByEmail(data.email);
+    findUserByEmail(data.email);
     
-    // In a real app we might verify something, but for the prompt:
-    // "check email exists, return generic message always"
-    // "If email exists and recovery code matches, allow password reset" (handled in reset-password)
-    
+    // Generic response regardless of whether email exists
     res.json({ message: 'If the email exists, instructions would be sent (or use your existing recovery code to reset)' });
   } catch (err: any) {
     res.status(400).json({ error: err.errors || err.message || 'Invalid request' });
@@ -172,8 +169,9 @@ router.delete('/me', requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
-router.get('/csrf-token', (req, res) => {
+router.get('/csrf-token', (_req, res) => {
   res.json({ message: 'Origin-based CSRF protection in use, no token required.' });
 });
 
+export { router as authRouter };
 export default router;

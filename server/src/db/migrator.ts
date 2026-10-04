@@ -22,10 +22,26 @@ export function runMigrations(): void {
     db.prepare('SELECT filename FROM _migrations').all().map((row: any) => row.filename)
   );
 
-  const migrationsDir = path.join(__dirname, 'migrations');
-  if (!fs.existsSync(migrationsDir)) {
-    console.log('[DB] No migrations directory found, skipping migrations.');
-    return;
+  const candidateDirs = [
+    path.join(__dirname, 'migrations'),
+    path.join(__dirname, '../src/db/migrations'),
+    path.join(__dirname, '../../server/src/db/migrations'),
+    path.join(process.cwd(), 'server/src/db/migrations'),
+    path.join(process.cwd(), 'src/db/migrations'),
+    path.join(process.cwd(), 'dist/migrations'),
+  ];
+
+  let migrationsDir: string | null = null;
+  for (const dir of candidateDirs) {
+    if (fs.existsSync(dir)) {
+      migrationsDir = dir;
+      break;
+    }
+  }
+
+  if (!migrationsDir) {
+    console.error('[DB] No migrations directory found in candidates:', candidateDirs);
+    throw new Error('Migrations directory not found');
   }
 
   const files = fs.readdirSync(migrationsDir)

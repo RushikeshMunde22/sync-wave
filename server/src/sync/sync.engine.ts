@@ -1,15 +1,25 @@
 import { Server as SocketIOServer } from 'socket.io';
-import { PlaybackState, QueueItem, MemberPresence, RoomState, ClientToServerEvents, ServerToClientEvents, TrackInfo } from './sync.events';
+import { PlaybackState, QueueItem, MemberPresence, ClientToServerEvents, ServerToClientEvents, TrackInfo } from './sync.events.js';
+import { getDb } from '../db/database.js';
 
-// In a real app, you would fetch this from a database or external API.
-// For now, we mock track fetching.
-const MOCK_TRACK_DB: Record<string, TrackInfo> = {
-  'track-1': { id: 'track-1', title: 'Song 1', artist: 'Artist A', durationMs: 180000 },
-  'track-2': { id: 'track-2', title: 'Song 2', artist: 'Artist B', durationMs: 240000 },
-};
-
-function getTrackInfo(trackId: string): TrackInfo | undefined {
-  return MOCK_TRACK_DB[trackId];
+export function getTrackInfo(trackId: string): TrackInfo | undefined {
+  try {
+    const db = getDb();
+    const row = db.prepare('SELECT * FROM tracks WHERE id = ?').get(trackId) as any;
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      title: row.title,
+      artist: row.artist,
+      artworkUrl: row.artwork_url || undefined,
+      durationMs: row.duration_ms,
+      streamUrl: row.stream_url_cached || undefined,
+      attribution: row.attribution || undefined,
+    };
+  } catch (err) {
+    console.error('Failed to get track info from DB:', err);
+    return undefined;
+  }
 }
 
 export class SyncEngine {
@@ -23,8 +33,19 @@ export class SyncEngine {
   constructor(private io: SocketIOServer<ClientToServerEvents, ServerToClientEvents>) {}
 
   init(): void {
-    // In a real app, you would load active playback states from a database here
-    console.log('SyncEngine initialized');
+    try {
+      const db = getDb();
+      const rows = db.prepare('SELECT group_id FROM playback_state').all() as { group_id: string }[];
+      for (const row of rows) {
+        const state = this.loadState(row.group_id);
+        if (state) {
+          this.playbackStates.set(row.group_id, state);
+        }
+      }
+      console.log(`[SyncEngine] Initialized with ${rows.length} room state(s) from database.`);
+    } catch (err) {
+      console.error('[SyncEngine] Error initializing from DB:', err);
+    }
   }
 
   private async withGroupLock<T>(groupId: string, fn: () => T | Promise<T>): Promise<T> {
@@ -38,7 +59,6 @@ export class SyncEngine {
     });
     this.groupLocks.set(groupId, nextLock);
     
-    // We await currentLock to queue up, then run fn and return its result
     await currentLock;
     return await fn();
   }
@@ -47,7 +67,13 @@ export class SyncEngine {
     const state = this.playbackStates.get(groupId);
     if (state) return { ...state };
     
-    // Default state if not found
+    // Check DB
+    const dbState = this.loadState(groupId);
+    if (dbState) {
+      this.playbackStates.set(groupId, dbState);
+      return { ...dbState };
+    }
+
     return {
       trackId: null,
       isPlaying: false,
@@ -74,7 +100,7 @@ export class SyncEngine {
       this.playbackStates.set(groupId, state);
       this.broadcastPlaybackState(groupId, state);
 
-      const remainingMs = trackInfo.durationMs - state.positionMs;
+      const remainingMs = Math.max(0, trackInfo.durationMs - state.positionMs);
       this.setTrackEndTimer(groupId, remainingMs);
       this.persistState(groupId, state);
     });
@@ -100,23 +126,24 @@ export class SyncEngine {
 
       this.playbackStates.set(groupId, state);
       this.clearTrackEndTimer(groupId);
-      
       this.broadcastPlaybackState(groupId, state);
-      // We might want to send admin-paused with user info, omitting full names for simplicity
-      this.io.to(groupId).emit('playback:admin-paused', { pausedBy: userId, pausedByName: 'Admin' });
       this.persistState(groupId, state);
+
+      try {
+        const db = getDb();
+        const userRow = db.prepare('SELECT display_name FROM users WHERE id = ?').get(userId) as { display_name: string } | undefined;
+        this.io.to(groupId).emit('playback:admin-paused', {
+          pausedBy: userId,
+          pausedByName: userRow?.display_name || 'Host'
+        });
+      } catch (e) {}
     });
   }
 
   async seek(groupId: string, userId: string, positionMs: number): Promise<void> {
     await this.withGroupLock(groupId, () => {
       const state = this.getPlaybackState(groupId);
-      if (!state.trackId) return;
-
-      const trackInfo = getTrackInfo(state.trackId) || state.track;
-      if (!trackInfo) return;
-
-      state.positionMs = Math.min(positionMs, trackInfo.durationMs);
+      state.positionMs = positionMs;
       state.serverTimeMs = Date.now();
       state.version += 1;
       state.controlledBy = userId;
@@ -124,9 +151,12 @@ export class SyncEngine {
       this.playbackStates.set(groupId, state);
       this.broadcastPlaybackState(groupId, state);
 
-      if (state.isPlaying) {
-        const remainingMs = trackInfo.durationMs - state.positionMs;
-        this.setTrackEndTimer(groupId, remainingMs);
+      if (state.isPlaying && state.trackId) {
+        const trackInfo = getTrackInfo(state.trackId) || state.track;
+        if (trackInfo) {
+          const remainingMs = Math.max(0, trackInfo.durationMs - positionMs);
+          this.setTrackEndTimer(groupId, remainingMs);
+        }
       }
       this.persistState(groupId, state);
     });
@@ -137,14 +167,15 @@ export class SyncEngine {
       const trackInfo = getTrackInfo(trackId);
       if (!trackInfo) return;
 
-      const state = this.getPlaybackState(groupId);
-      state.trackId = trackId;
-      state.track = trackInfo;
-      state.positionMs = 0;
-      state.isPlaying = true;
-      state.serverTimeMs = Date.now();
-      state.version += 1;
-      state.controlledBy = userId;
+      const state: PlaybackState = {
+        trackId,
+        track: trackInfo,
+        isPlaying: true,
+        positionMs: 0,
+        serverTimeMs: Date.now(),
+        version: (this.playbackStates.get(groupId)?.version || 0) + 1,
+        controlledBy: userId
+      };
 
       this.playbackStates.set(groupId, state);
       this.clearSkipVotes(groupId);
@@ -155,8 +186,6 @@ export class SyncEngine {
   }
 
   async skip(groupId: string, userId: string): Promise<void> {
-    // For simplicity, treating anyone as having skip permissions instantly.
-    // In a full implementation, you'd check roles.
     await this.withGroupLock(groupId, () => {
       const state = this.getPlaybackState(groupId);
       const nextItem = this.popNextFromQueue(groupId);
@@ -249,15 +278,22 @@ export class SyncEngine {
       const trackInfo = getTrackInfo(trackId);
       if (!trackInfo) return;
 
+      let userName = 'Listener';
+      try {
+        const db = getDb();
+        const userRow = db.prepare('SELECT display_name FROM users WHERE id = ?').get(userId) as { display_name: string } | undefined;
+        if (userRow) userName = userRow.display_name;
+      } catch (e) {}
+
       const newItem: QueueItem = {
-        id: Math.random().toString(36).substring(7),
+        id: `q-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         trackId,
         title: trackInfo.title,
         artist: trackInfo.artist,
         artworkUrl: trackInfo.artworkUrl,
         durationMs: trackInfo.durationMs,
         addedBy: userId,
-        addedByName: 'User',
+        addedByName: userName,
         position: queue.length
       };
 
@@ -267,14 +303,13 @@ export class SyncEngine {
         queue.push(newItem);
       }
 
-      // Re-index positions
       queue.forEach((item, index) => item.position = index);
       this.queues.set(groupId, queue);
       this.broadcastQueue(groupId);
     });
   }
 
-  async removeFromQueue(groupId: string, userId: string, queueItemId: string): Promise<void> {
+  async removeFromQueue(groupId: string, _userId: string, queueItemId: string): Promise<void> {
     await this.withGroupLock(groupId, () => {
       let queue = this.queues.get(groupId) || [];
       queue = queue.filter(item => item.id !== queueItemId);
@@ -284,13 +319,15 @@ export class SyncEngine {
     });
   }
 
-  async reorderQueue(groupId: string, userId: string, queueItemId: string, newPosition: number): Promise<void> {
+  async reorderQueue(groupId: string, _userId: string, queueItemId: string, newPosition: number): Promise<void> {
     await this.withGroupLock(groupId, () => {
-      let queue = this.queues.get(groupId) || [];
+      const queue = this.queues.get(groupId) || [];
       const itemIndex = queue.findIndex(item => item.id === queueItemId);
       if (itemIndex === -1) return;
 
       const [item] = queue.splice(itemIndex, 1);
+      if (!item) return;
+
       queue.splice(newPosition, 0, item);
       queue.forEach((i, index) => i.position = index);
       this.queues.set(groupId, queue);
@@ -391,12 +428,54 @@ export class SyncEngine {
   }
 
   private persistState(groupId: string, state: PlaybackState): void {
-    // In a real app, save to Redis or Postgres
+    try {
+      const db = getDb();
+      db.prepare(`
+        INSERT INTO playback_state (group_id, track_id, is_playing, position_ms, updated_at_server_ms, version, controlled_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(group_id) DO UPDATE SET
+          track_id = excluded.track_id,
+          is_playing = excluded.is_playing,
+          position_ms = excluded.position_ms,
+          updated_at_server_ms = excluded.updated_at_server_ms,
+          version = excluded.version,
+          controlled_by = excluded.controlled_by
+      `).run(
+        groupId,
+        state.trackId,
+        state.isPlaying ? 1 : 0,
+        state.positionMs,
+        state.serverTimeMs,
+        state.version,
+        state.controlledBy
+      );
+    } catch (err) {
+      console.error('Failed to persist playback state to DB:', err);
+    }
   }
 
   private loadState(groupId: string): PlaybackState | null {
-    // In a real app, load from DB
-    return null;
+    try {
+      const db = getDb();
+      const row = db.prepare('SELECT * FROM playback_state WHERE group_id = ?').get(groupId) as any;
+      if (!row) return null;
+      let trackInfo: TrackInfo | undefined = undefined;
+      if (row.track_id) {
+        trackInfo = getTrackInfo(row.track_id);
+      }
+      return {
+        trackId: row.track_id,
+        isPlaying: Boolean(row.is_playing),
+        positionMs: row.position_ms,
+        serverTimeMs: row.updated_at_server_ms,
+        version: row.version,
+        controlledBy: row.controlled_by,
+        track: trackInfo,
+      };
+    } catch (err) {
+      console.error('Failed to load playback state from DB:', err);
+      return null;
+    }
   }
 
   private broadcastPlaybackState(groupId: string, state: PlaybackState): void {

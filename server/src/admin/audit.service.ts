@@ -11,8 +11,8 @@ export function logAudit(
   const db = getDb();
   const id = randomUUID();
   
-  db.prepare(
+  db.prepare(`
     INSERT INTO audit_log (id, actor_id, action, target, metadata, ip_hash)
     VALUES (?, ?, ?, ?, ?, ?)
-  ).run(id, actorId, action, target, metadata ? JSON.stringify(metadata) : null, ipHash);
+  `).run(id, actorId, action, target, metadata ? JSON.stringify(metadata) : null, ipHash);
 }

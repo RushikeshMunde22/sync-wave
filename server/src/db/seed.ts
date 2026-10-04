@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import argon2 from 'argon2';
 import crypto from 'crypto';
 
-export async function runSeeder(): Promise<void> {
+export async function seedSuperadmin(): Promise<void> {
   const db = getDb();
   
   const superadminCountResult = db.prepare('SELECT COUNT(*) as count FROM users WHERE role = ?').get('superadmin') as { count: number };
@@ -44,13 +44,13 @@ export async function runSeeder(): Promise<void> {
     console.log('[Seed] Superadmin already exists or credentials not provided in config.');
   }
 
-  if (config.ENV === 'development' || process.env.NODE_ENV === 'development') {
+  if (config.NODE_ENV === 'development' || process.env.NODE_ENV === 'development') {
     const demoUserResult = db.prepare('SELECT id FROM users WHERE email = ?').get('demo@example.com') as { id: string } | undefined;
     if (!demoUserResult) {
       console.log('[Seed] Creating demo user and group...');
       try {
         const demoUserId = uuidv4();
-        const demoPassword = await argon2.hash('demo123');
+        const demoPassword = await argon2.hash('demo123456');
         
         db.prepare(`
           INSERT INTO users (id, email, password_hash, display_name)
@@ -58,7 +58,7 @@ export async function runSeeder(): Promise<void> {
         `).run(demoUserId, 'demo@example.com', demoPassword, 'Demo User');
 
         const demoGroupId = uuidv4();
-        const inviteCode = crypto.randomBytes(6).toString('hex');
+        const inviteCode = crypto.randomBytes(4).toString('hex').toUpperCase();
         
         db.prepare(`
           INSERT INTO groups (id, name, owner_id, invite_code)
@@ -69,6 +69,11 @@ export async function runSeeder(): Promise<void> {
           INSERT INTO group_members (group_id, user_id, role)
           VALUES (?, ?, ?)
         `).run(demoGroupId, demoUserId, 'owner');
+
+        db.prepare(`
+          INSERT INTO playback_state (group_id, is_playing, position_ms, updated_at_server_ms, version)
+          VALUES (?, 0, 0, ?, 0)
+        `).run(demoGroupId, Date.now());
         
         console.log('[Seed] Demo data created.');
       } catch (err) {
@@ -77,3 +82,5 @@ export async function runSeeder(): Promise<void> {
     }
   }
 }
+
+export const runSeeder = seedSuperadmin;

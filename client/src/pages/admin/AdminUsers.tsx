@@ -7,9 +7,9 @@ export default function AdminUsers() {
   const [total, setTotal] = useState(0);
 
   const loadUsers = () => {
-    api.get(\`/admin/users?search=\${search}\`).then(res => {
-      setUsers(res.data.users);
-      setTotal(res.data.total);
+    api.get(`/admin/users?search=${encodeURIComponent(search)}`).then(res => {
+      setUsers(res.data.users || []);
+      setTotal(res.data.total || 0);
     }).catch(console.error);
   };
 
@@ -20,13 +20,15 @@ export default function AdminUsers() {
   const handleAction = async (userId: string, type: string, value: string) => {
     try {
       if (type === 'ban') {
-        await api.put(\`/admin/users/\${userId}/ban\`, { action: value });
+        await api.put(`/admin/users/${userId}/ban`, { action: value });
       } else if (type === 'role') {
-        await api.put(\`/admin/users/\${userId}/role\`, { role: value });
+        await api.put(`/admin/users/${userId}/role`, { role: value });
       } else if (type === 'logout') {
-        await api.delete(\`/admin/users/\${userId}/sessions\`);
+        await api.delete(`/admin/users/${userId}/sessions`);
       } else if (type === 'delete') {
-        if (confirm('Are you sure?')) await api.delete(\`/admin/users/\${userId}\`);
+        if (confirm('Are you sure you want to delete this user?')) {
+          await api.delete(`/admin/users/${userId}`);
+        }
       }
       loadUsers();
     } catch (e) {
@@ -59,34 +61,42 @@ export default function AdminUsers() {
             </tr>
           </thead>
           <tbody>
-            {users.map(u => (
-              <tr key={u.id} className="border-b border-gray-800 hover:bg-gray-800/50">
-                <td className="p-4 text-gray-400">{u.email}</td>
-                <td className="p-4 text-gray-200">{u.displayName}</td>
-                <td className="p-4">
-                  <span className={\`px-2 py-1 rounded text-xs \${u.role === 'superadmin' ? 'bg-indigo-900 text-indigo-300' : 'bg-gray-700 text-gray-300'}\`}>
-                    {u.role}
-                  </span>
-                </td>
-                <td className="p-4">
-                  {u.isBanned ? <span className="text-red-400 text-sm">Banned</span> : <span className="text-green-400 text-sm">Active</span>}
-                </td>
-                <td className="p-4 flex gap-2 justify-end">
-                  {u.isBanned ? (
-                    <button onClick={() => handleAction(u.id, 'ban', 'unban')} className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded">Unban</button>
-                  ) : (
-                    <button onClick={() => handleAction(u.id, 'ban', 'ban')} className="text-xs bg-red-900/50 text-red-300 hover:bg-red-900 px-3 py-1 rounded">Ban</button>
-                  )}
-                  {u.role === 'superadmin' ? (
-                    <button onClick={() => handleAction(u.id, 'role', 'user')} className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded">Demote</button>
-                  ) : (
-                    <button onClick={() => handleAction(u.id, 'role', 'superadmin')} className="text-xs bg-indigo-900/50 text-indigo-300 hover:bg-indigo-900 px-3 py-1 rounded">Promote</button>
-                  )}
-                  <button onClick={() => handleAction(u.id, 'logout', '')} className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded">Force Logout</button>
-                  <button onClick={() => handleAction(u.id, 'delete', '')} className="text-xs bg-red-900/50 text-red-300 hover:bg-red-900 px-3 py-1 rounded">Delete</button>
-                </td>
+            {users.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="p-8 text-center text-gray-500">No users found.</td>
               </tr>
-            ))}
+            ) : (
+              users.map(u => (
+                <tr key={u.id} className="border-b border-gray-800 hover:bg-gray-800/50">
+                  <td className="p-4 text-gray-400">{u.email}</td>
+                  <td className="p-4 text-gray-200">{u.displayName}</td>
+                  <td className="p-4">
+                    <span className={`px-2 py-1 rounded text-xs ${
+                      u.role === 'superadmin' ? 'bg-indigo-900 text-indigo-300' : 'bg-gray-700 text-gray-300'
+                    }`}>
+                      {u.role}
+                    </span>
+                  </td>
+                  <td className="p-4">
+                    {u.isBanned ? <span className="text-red-400 text-sm">Banned</span> : <span className="text-green-400 text-sm">Active</span>}
+                  </td>
+                  <td className="p-4 flex gap-2 justify-end">
+                    {u.isBanned ? (
+                      <button onClick={() => handleAction(u.id, 'ban', 'unban')} className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded">Unban</button>
+                    ) : (
+                      <button onClick={() => handleAction(u.id, 'ban', 'ban')} className="text-xs bg-red-900/50 text-red-300 hover:bg-red-900 px-3 py-1 rounded">Ban</button>
+                    )}
+                    {u.role === 'superadmin' ? (
+                      <button onClick={() => handleAction(u.id, 'role', 'user')} className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded">Demote</button>
+                    ) : (
+                      <button onClick={() => handleAction(u.id, 'role', 'superadmin')} className="text-xs bg-indigo-900/50 text-indigo-300 hover:bg-indigo-900 px-3 py-1 rounded">Promote</button>
+                    )}
+                    <button onClick={() => handleAction(u.id, 'logout', '')} className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded">Force Logout</button>
+                    <button onClick={() => handleAction(u.id, 'delete', '')} className="text-xs bg-red-900/50 text-red-300 hover:bg-red-900 px-3 py-1 rounded">Delete</button>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

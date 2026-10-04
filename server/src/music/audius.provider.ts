@@ -61,7 +61,7 @@ export class AudiusProvider implements MusicProvider {
       const sliced = items.slice(offset, offset + limit);
       
       return {
-        tracks: sliced.map(t => this.mapTrack(t)),
+        tracks: sliced.map((t: any) => this.mapTrack(t)),
         hasMore: offset + limit < items.length,
       };
     } catch (error) {
@@ -84,7 +84,7 @@ export class AudiusProvider implements MusicProvider {
       const data = await response.json();
       const items = Array.isArray(data.data) ? data.data : [];
       return {
-        tracks: items.map(t => this.mapTrack(t)),
+        tracks: items.map((t: any) => this.mapTrack(t)),
         hasMore: items.length === limit,
       };
     } catch (error) {

@@ -17,7 +17,6 @@ import { groupRouter } from './groups/group.routes.js';
 import { musicRouter } from './music/music.routes.js';
 import { adminRouter } from './admin/admin.routes.js';
 import { setupSocketHandlers } from './sync/sync.handlers.js';
-import { socketAuthMiddleware } from './sync/sync.middleware.js';
 import { sessionMiddleware, csrfProtection } from './auth/auth.middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -107,8 +106,7 @@ const io = new SocketIOServer(httpServer, {
   pingInterval: 25000,
 });
 
-io.use(socketAuthMiddleware);
-setupSocketHandlers(io);
+// Socket.IO handlers are attached in start() after DB initialization and migrations
 
 // ── Serve static files (client build) ────────────────────
 const clientDistPath = path.resolve(__dirname, '../../client/dist');
@@ -120,6 +118,11 @@ app.use(express.static(clientDistPath, {
     }
   },
 }));
+
+// ── API 404 handler ──────────────────────────────────────
+app.all('/api/*', (_req, res) => {
+  res.status(404).json({ error: 'API endpoint not found' });
+});
 
 // ── SPA fallback ─────────────────────────────────────────
 app.get('*', (_req, res) => {
@@ -154,6 +157,10 @@ async function start(): Promise<void> {
   // Schedule backups
   scheduleBackups();
   console.log('✅ Backup scheduler started');
+
+  // Initialize Realtime Sync Engine (after DB and tables exist)
+  setupSocketHandlers(io);
+  console.log('✅ Realtime Sync Engine initialized');
 
   // Start server
   httpServer.listen(config.PORT, () => {

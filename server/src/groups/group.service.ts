@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import db from '../db/database.js';
+import { getDb } from '../db/database.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface Group {
@@ -37,77 +37,88 @@ export const generateInviteCode = (): string => {
   let code = '';
   const bytes = crypto.randomBytes(8);
   for (let i = 0; i < 8; i++) {
-    code += INVITE_ALPHABET[bytes[i] % INVITE_ALPHABET.length];
+    const byte = bytes[i];
+    if (byte !== undefined) {
+      code += INVITE_ALPHABET[byte % INVITE_ALPHABET.length];
+    }
   }
   return code;
 };
 
 export const createGroup = async (ownerId: string, name: string): Promise<Group> => {
+  const db = getDb();
   const groupId = uuidv4();
   const inviteCode = generateInviteCode();
   
-  await db.query(
-    `INSERT INTO groups (id, name, owner_id, invite_code, invite_revoked, members_can_control, max_members, is_closed) 
-     VALUES ($1, $2, $3, $4, false, true, 50, false)`,
-    [groupId, name, ownerId, inviteCode]
-  );
+  db.transaction(() => {
+    db.prepare(`
+      INSERT INTO groups (id, name, owner_id, invite_code, invite_revoked, members_can_control, max_members, is_closed) 
+      VALUES (?, ?, ?, ?, 0, 0, 50, 0)
+    `).run(groupId, name, ownerId, inviteCode);
 
-  await db.query(
-    `INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'owner')`,
-    [groupId, ownerId]
-  );
+    db.prepare(`
+      INSERT INTO group_members (group_id, user_id, role)
+      VALUES (?, ?, 'owner')
+    `).run(groupId, ownerId);
 
-  await db.query(
-    `INSERT INTO playback_state (group_id) VALUES ($1)`,
-    [groupId]
-  );
+    db.prepare(`
+      INSERT INTO playback_state (group_id, is_playing, position_ms, updated_at_server_ms, version)
+      VALUES (?, 0, 0, ?, 0)
+    `).run(groupId, Date.now());
+  })();
 
-  const result = await db.query(`SELECT * FROM groups WHERE id = $1`, [groupId]);
-  return mapGroupDbToModel(result.rows[0]);
+  const row = db.prepare('SELECT * FROM groups WHERE id = ?').get(groupId);
+  return mapGroupDbToModel(row);
 };
 
 export const getGroup = async (groupId: string): Promise<Group | null> => {
-  const result = await db.query(`SELECT * FROM groups WHERE id = $1`, [groupId]);
-  if (!result.rows.length) return null;
-  return mapGroupDbToModel(result.rows[0]);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM groups WHERE id = ?').get(groupId);
+  if (!row) return null;
+  return mapGroupDbToModel(row);
 };
 
 export const getGroupByInviteCode = async (code: string): Promise<Group | null> => {
-  const result = await db.query(`
+  const db = getDb();
+  const row = db.prepare(`
     SELECT * FROM groups 
-    WHERE invite_code = $1 
-      AND invite_revoked = false 
-      AND is_closed = false 
-      AND (invite_expires_at IS NULL OR invite_expires_at > NOW())
-  `, [code]);
-  if (!result.rows.length) return null;
-  return mapGroupDbToModel(result.rows[0]);
+    WHERE invite_code = ? 
+      AND invite_revoked = 0 
+      AND is_closed = 0 
+      AND (invite_expires_at IS NULL OR datetime(invite_expires_at) > datetime('now'))
+  `).get(code);
+  if (!row) return null;
+  return mapGroupDbToModel(row);
 };
 
 export const getUserGroups = async (userId: string): Promise<GroupWithMeta[]> => {
-  const result = await db.query(`
+  const db = getDb();
+  const rows = db.prepare(`
     SELECT 
       g.*, 
       gm.role as my_role,
       (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) as member_count,
-      ps.current_track_title,
+      t.title as current_track_title,
       ps.is_playing
     FROM groups g
     JOIN group_members gm ON g.id = gm.group_id
     LEFT JOIN playback_state ps ON g.id = ps.group_id
-    WHERE gm.user_id = $1
-  `, [userId]);
+    LEFT JOIN tracks t ON ps.track_id = t.id
+    WHERE gm.user_id = ?
+    ORDER BY g.created_at DESC
+  `).all(userId) as any[];
 
-  return result.rows.map(row => ({
+  return rows.map(row => ({
     ...mapGroupDbToModel(row),
-    memberCount: parseInt(row.member_count),
+    memberCount: Number(row.member_count) || 1,
     currentTrackTitle: row.current_track_title || undefined,
-    isPlaying: row.is_playing,
+    isPlaying: Boolean(row.is_playing),
     myRole: row.my_role
   }));
 };
 
 export const joinGroup = async (userId: string, code: string): Promise<{ group?: Group; error?: string }> => {
+  const db = getDb();
   const group = await getGroupByInviteCode(code);
   
   if (!group) {
@@ -117,42 +128,52 @@ export const joinGroup = async (userId: string, code: string): Promise<{ group?:
     return { error: 'Group is closed' };
   }
 
+  // Check if user is banned globally
+  const user = db.prepare('SELECT is_banned FROM users WHERE id = ?').get(userId) as { is_banned: number } | undefined;
+  if (user?.is_banned) {
+    return { error: 'Your account is banned' };
+  }
+
   const isMember = await isGroupMember(userId, group.id);
   if (isMember) {
     return { error: 'Already a member of this group' };
   }
 
-  const memberCountResult = await db.query(`SELECT COUNT(*) as count FROM group_members WHERE group_id = $1`, [group.id]);
-  const memberCount = parseInt(memberCountResult.rows[0].count);
-
-  if (memberCount >= group.maxMembers) {
+  const countRow = db.prepare('SELECT COUNT(*) as count FROM group_members WHERE group_id = ?').get(group.id) as { count: number };
+  if (countRow.count >= group.maxMembers) {
     return { error: 'Group is full' };
   }
 
-  const isBannedResult = await db.query(`SELECT 1 FROM group_bans WHERE group_id = $1 AND user_id = $2`, [group.id, userId]);
-  if (isBannedResult.rows.length > 0) {
-    return { error: 'You are banned from this group' };
-  }
-
-  await db.query(
-    `INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'member')`,
-    [group.id, userId]
-  );
+  db.prepare(`
+    INSERT INTO group_members (group_id, user_id, role)
+    VALUES (?, ?, 'member')
+  `).run(group.id, userId);
 
   return { group };
 };
 
 export const leaveGroup = async (userId: string, groupId: string): Promise<void> => {
+  const db = getDb();
   const role = await getMemberRole(userId, groupId);
   if (!role) return;
 
   if (role === 'owner') {
-    const adminsResult = await db.query(`SELECT user_id FROM group_members WHERE group_id = $1 AND role = 'admin' ORDER BY joined_at ASC LIMIT 1`, [groupId]);
-    let newOwnerId = adminsResult.rows[0]?.user_id;
+    // Promote longest-serving admin, then longest-serving member
+    const nextAdmin = db.prepare(`
+      SELECT user_id FROM group_members 
+      WHERE group_id = ? AND role = 'admin' AND user_id != ?
+      ORDER BY joined_at ASC LIMIT 1
+    `).get(groupId, userId) as { user_id: string } | undefined;
+
+    let newOwnerId = nextAdmin?.user_id;
 
     if (!newOwnerId) {
-      const membersResult = await db.query(`SELECT user_id FROM group_members WHERE group_id = $1 AND role = 'member' AND user_id != $2 ORDER BY joined_at ASC LIMIT 1`, [groupId, userId]);
-      newOwnerId = membersResult.rows[0]?.user_id;
+      const nextMember = db.prepare(`
+        SELECT user_id FROM group_members 
+        WHERE group_id = ? AND role = 'member' AND user_id != ?
+        ORDER BY joined_at ASC LIMIT 1
+      `).get(groupId, userId) as { user_id: string } | undefined;
+      newOwnerId = nextMember?.user_id;
     }
 
     if (newOwnerId) {
@@ -162,10 +183,11 @@ export const leaveGroup = async (userId: string, groupId: string): Promise<void>
     }
   }
 
-  await db.query(`DELETE FROM group_members WHERE group_id = $1 AND user_id = $2`, [groupId, userId]);
+  db.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').run(groupId, userId);
 };
 
 export const kickMember = async (actorId: string, targetId: string, groupId: string): Promise<void> => {
+  const db = getDb();
   const actorRole = await getMemberRole(actorId, groupId);
   const targetRole = await getMemberRole(targetId, groupId);
 
@@ -173,120 +195,129 @@ export const kickMember = async (actorId: string, targetId: string, groupId: str
   if (actorRole === 'member') throw new Error('Unauthorized');
   if (targetRole === 'owner') throw new Error('Cannot kick owner');
   
-  await db.query(`DELETE FROM group_members WHERE group_id = $1 AND user_id = $2`, [groupId, targetId]);
-  await db.query(`INSERT INTO group_bans (group_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [groupId, targetId]);
+  db.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').run(groupId, targetId);
 };
 
 export const promoteMember = async (actorId: string, targetId: string, groupId: string): Promise<void> => {
+  const db = getDb();
   const actorRole = await getMemberRole(actorId, groupId);
   if (actorRole !== 'owner' && actorRole !== 'admin') throw new Error('Unauthorized');
 
   const targetRole = await getMemberRole(targetId, groupId);
   if (targetRole === 'member') {
-    await db.query(`UPDATE group_members SET role = 'admin' WHERE group_id = $1 AND user_id = $2`, [groupId, targetId]);
+    db.prepare("UPDATE group_members SET role = 'admin' WHERE group_id = ? AND user_id = ?").run(groupId, targetId);
   }
 };
 
 export const demoteMember = async (actorId: string, targetId: string, groupId: string): Promise<void> => {
+  const db = getDb();
   const actorRole = await getMemberRole(actorId, groupId);
   if (actorRole !== 'owner') throw new Error('Unauthorized');
 
   const targetRole = await getMemberRole(targetId, groupId);
   if (targetRole === 'admin') {
-    await db.query(`UPDATE group_members SET role = 'member' WHERE group_id = $1 AND user_id = $2`, [groupId, targetId]);
+    db.prepare("UPDATE group_members SET role = 'member' WHERE group_id = ? AND user_id = ?").run(groupId, targetId);
   }
 };
 
 export const transferOwnership = async (ownerId: string, targetId: string, groupId: string): Promise<void> => {
+  const db = getDb();
   const ownerRole = await getMemberRole(ownerId, groupId);
   if (ownerRole !== 'owner') throw new Error('Unauthorized');
 
   const targetRole = await getMemberRole(targetId, groupId);
   if (!targetRole) throw new Error('Target is not a member');
 
-  await db.query('BEGIN');
-  try {
-    await db.query(`UPDATE group_members SET role = 'admin' WHERE group_id = $1 AND user_id = $2`, [groupId, ownerId]);
-    await db.query(`UPDATE group_members SET role = 'owner' WHERE group_id = $1 AND user_id = $2`, [groupId, targetId]);
-    await db.query(`UPDATE groups SET owner_id = $2 WHERE id = $1`, [groupId, targetId]);
-    await db.query('COMMIT');
-  } catch (error) {
-    await db.query('ROLLBACK');
-    throw error;
-  }
+  db.transaction(() => {
+    db.prepare("UPDATE group_members SET role = 'admin' WHERE group_id = ? AND user_id = ?").run(groupId, ownerId);
+    db.prepare("UPDATE group_members SET role = 'owner' WHERE group_id = ? AND user_id = ?").run(groupId, targetId);
+    db.prepare('UPDATE groups SET owner_id = ? WHERE id = ?').run(targetId, groupId);
+  })();
 };
 
 export const regenerateInviteCode = async (actorId: string, groupId: string, expiresInHours?: number): Promise<string> => {
+  const db = getDb();
   const actorRole = await getMemberRole(actorId, groupId);
   if (actorRole !== 'owner' && actorRole !== 'admin') throw new Error('Unauthorized');
 
   const newCode = generateInviteCode();
   const expiresAt = expiresInHours ? new Date(Date.now() + expiresInHours * 3600000).toISOString() : null;
 
-  await db.query(
-    `UPDATE groups SET invite_code = $1, invite_expires_at = $2, invite_revoked = false WHERE id = $3`,
-    [newCode, expiresAt, groupId]
-  );
+  db.prepare(`
+    UPDATE groups 
+    SET invite_code = ?, invite_expires_at = ?, invite_revoked = 0 
+    WHERE id = ?
+  `).run(newCode, expiresAt, groupId);
+
   return newCode;
 };
 
 export const revokeInviteCode = async (actorId: string, groupId: string): Promise<void> => {
+  const db = getDb();
   const actorRole = await getMemberRole(actorId, groupId);
   if (actorRole !== 'owner' && actorRole !== 'admin') throw new Error('Unauthorized');
 
-  await db.query(`UPDATE groups SET invite_revoked = true WHERE id = $1`, [groupId]);
+  db.prepare('UPDATE groups SET invite_revoked = 1 WHERE id = ?').run(groupId);
 };
 
-export const updateGroupSettings = async (actorId: string, groupId: string, settings: Partial<Pick<Group, 'name' | 'membersCanControl' | 'maxMembers'>>): Promise<void> => {
+export const updateGroupSettings = async (
+  actorId: string, 
+  groupId: string, 
+  settings: Partial<Pick<Group, 'name' | 'membersCanControl' | 'maxMembers'>>
+): Promise<void> => {
+  const db = getDb();
   const actorRole = await getMemberRole(actorId, groupId);
   if (actorRole !== 'owner' && actorRole !== 'admin') throw new Error('Unauthorized');
 
-  const updates = [];
-  const values = [];
-  let index = 1;
+  const updates: string[] = [];
+  const values: any[] = [];
 
   if (settings.name !== undefined) {
-    updates.push(`name = $${index++}`);
+    updates.push('name = ?');
     values.push(settings.name);
   }
   if (settings.membersCanControl !== undefined) {
-    updates.push(`members_can_control = $${index++}`);
-    values.push(settings.membersCanControl);
+    updates.push('members_can_control = ?');
+    values.push(settings.membersCanControl ? 1 : 0);
   }
   if (settings.maxMembers !== undefined) {
-    updates.push(`max_members = $${index++}`);
+    updates.push('max_members = ?');
     values.push(settings.maxMembers);
   }
 
   if (updates.length > 0) {
     values.push(groupId);
-    await db.query(`UPDATE groups SET ${updates.join(', ')} WHERE id = $${index}`, values);
+    db.prepare(`UPDATE groups SET ${updates.join(', ')} WHERE id = ?`).run(...values);
   }
 };
 
 export const closeGroup = async (actorId: string, groupId: string): Promise<void> => {
+  const db = getDb();
   const actorRole = await getMemberRole(actorId, groupId);
   if (actorRole !== 'owner') throw new Error('Unauthorized');
 
-  await db.query(`UPDATE groups SET is_closed = true WHERE id = $1`, [groupId]);
+  db.prepare('UPDATE groups SET is_closed = 1 WHERE id = ?').run(groupId);
 };
 
 export const deleteGroup = async (actorId: string, groupId: string): Promise<void> => {
+  const db = getDb();
   const actorRole = await getMemberRole(actorId, groupId);
   if (actorRole !== 'owner') throw new Error('Unauthorized');
 
-  await db.query(`DELETE FROM groups WHERE id = $1`, [groupId]);
+  db.prepare('DELETE FROM groups WHERE id = ?').run(groupId);
 };
 
 export const getGroupMembers = async (groupId: string): Promise<GroupMember[]> => {
-  const result = await db.query(`
+  const db = getDb();
+  const rows = db.prepare(`
     SELECT gm.user_id, gm.role, gm.joined_at, u.display_name, u.avatar_emoji, u.avatar_color
     FROM group_members gm
     JOIN users u ON gm.user_id = u.id
-    WHERE gm.group_id = $1
-  `, [groupId]);
+    WHERE gm.group_id = ?
+    ORDER BY gm.joined_at ASC
+  `).all(groupId) as any[];
 
-  return result.rows.map(row => ({
+  return rows.map((row: any) => ({
     userId: row.user_id,
     displayName: row.display_name,
     avatarEmoji: row.avatar_emoji,
@@ -297,8 +328,9 @@ export const getGroupMembers = async (groupId: string): Promise<GroupMember[]> =
 };
 
 export const getMemberRole = async (userId: string, groupId: string): Promise<'owner' | 'admin' | 'member' | null> => {
-  const result = await db.query(`SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`, [groupId, userId]);
-  return result.rows.length ? result.rows[0].role : null;
+  const db = getDb();
+  const row = db.prepare('SELECT role FROM group_members WHERE group_id = ? AND user_id = ?').get(groupId, userId) as { role: 'owner' | 'admin' | 'member' } | undefined;
+  return row ? row.role : null;
 };
 
 export const isGroupMember = async (userId: string, groupId: string): Promise<boolean> => {
@@ -313,10 +345,10 @@ function mapGroupDbToModel(row: any): Group {
     ownerId: row.owner_id,
     inviteCode: row.invite_code,
     inviteExpiresAt: row.invite_expires_at,
-    inviteRevoked: row.invite_revoked,
-    membersCanControl: row.members_can_control,
-    maxMembers: row.max_members,
-    isClosed: row.is_closed,
+    inviteRevoked: Boolean(row.invite_revoked),
+    membersCanControl: Boolean(row.members_can_control),
+    maxMembers: Number(row.max_members),
+    isClosed: Boolean(row.is_closed),
     createdAt: row.created_at
   };
 }

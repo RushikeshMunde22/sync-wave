@@ -103,8 +103,10 @@ router.get('/stream/:provider/:id', streamLimiter, async (req, res, next) => {
   }
 });
 
-router.get('/providers', async (req, res) => {
+router.get('/providers', async (_req, res) => {
   res.json({ health: providerManager.getProviderHealth() });
 });
 
 export const musicRoutes = router;
+export { router as musicRouter };
+export default router;

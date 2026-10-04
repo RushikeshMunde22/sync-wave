@@ -65,7 +65,7 @@ export class JamendoProvider implements MusicProvider {
       const items = Array.isArray(data.results) ? data.results : [];
       
       return {
-        tracks: items.map(t => this.mapTrack(t)),
+        tracks: items.map((t: any) => this.mapTrack(t)),
         hasMore: items.length === limit,
       };
     } catch (error) {
@@ -96,7 +96,7 @@ export class JamendoProvider implements MusicProvider {
       const items = Array.isArray(data.results) ? data.results : [];
       
       return {
-        tracks: items.map(t => this.mapTrack(t)),
+        tracks: items.map((t: any) => this.mapTrack(t)),
         hasMore: items.length === limit,
       };
     } catch (error) {

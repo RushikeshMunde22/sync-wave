@@ -1,26 +1,9 @@
 import { Socket } from 'socket.io';
 import { z } from 'zod';
 import cookie from 'cookie';
-import { DefaultEventsMap } from 'socket.io/dist/typed-events';
-
-// Basic session validation mockup
-export interface SessionUser {
-  id: string;
-  name: string;
-  avatarColor: string;
-  avatarEmoji: string;
-}
-
-export async function validateSession(token: string): Promise<SessionUser | null> {
-  // In a real app, verify the token and return user from DB
-  if (!token) return null;
-  return {
-    id: `user-${Math.random().toString(36).substr(2, 6)}`,
-    name: 'SyncWave User',
-    avatarColor: '#1DB954',
-    avatarEmoji: '👋'
-  };
-}
+import cookieParser from 'cookie-parser';
+import { config } from '../config.js';
+import { validateSession } from '../auth/auth.service.js';
 
 export const socketAuthMiddleware = async (socket: Socket, next: (err?: Error) => void) => {
   try {
@@ -30,19 +13,24 @@ export const socketAuthMiddleware = async (socket: Socket, next: (err?: Error) =
     }
 
     const parsedCookies = cookie.parse(rawCookies);
-    // Assuming 'session' is the name of the cookie containing the token
-    const token = parsedCookies['session'];
+    const rawSessionCookie = parsedCookies['syncwave_session'];
     
-    if (!token) {
+    if (!rawSessionCookie) {
       return next(new Error('Authentication error: No session token'));
     }
 
-    const user = await validateSession(token);
-    if (!user) {
-      return next(new Error('Authentication error: Invalid session'));
+    // Unsign cookie
+    const unsignedSessionId = cookieParser.signedCookie(rawSessionCookie, config.SESSION_SECRET);
+    if (!unsignedSessionId || typeof unsignedSessionId !== 'string') {
+      return next(new Error('Authentication error: Invalid cookie signature'));
     }
 
-    // Attach user to socket data
+    const user = validateSession(unsignedSessionId);
+    if (!user) {
+      return next(new Error('Authentication error: Invalid or expired session'));
+    }
+
+    // Attach authenticated user to socket data
     socket.data.user = user;
     next();
   } catch (error) {

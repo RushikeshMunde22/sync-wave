@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { isGroupMember, getMemberRole } from './group.service.js';
+import { getMemberRole } from './group.service.js';
 
 declare global {
   namespace Express {
@@ -12,7 +12,7 @@ declare global {
 export const requireGroupMember = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user?.id;
-    const groupId = req.params.id;
+    const groupId = req.params.id as string;
 
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });

@@ -16,6 +16,8 @@ This document records the foundational architecture and technology decisions mad
 - [D008: Emoji and Color Avatars Instead of Image Uploads](#d008-emoji-and-color-avatars-instead-of-image-uploads)
 - [D009: Argon2id for Password Hashing](#d009-argon2id-for-password-hashing)
 - [D010: Single Reused HTMLAudioElement Pattern for Audio Engine](#d010-single-reused-htmlaudioelement-pattern-for-audio-engine)
+- [D011: Node 24 Native Prebuilt SQLite Dependency Alignment](#d011-node-24-native-prebuilt-sqlite-dependency-alignment)
+- [D012: Multi-Path Migration Resolution for Bundled and Dev Runtimes](#d012-multi-path-migration-resolution-for-bundled-and-dev-runtimes)
 
 ---
 
@@ -202,3 +204,36 @@ This document records the foundational architecture and technology decisions mad
 - **Risks & Mitigations**:
   - *Risk*: The reused element could retain stale buffering states or network errors from failed streams.
   - *Mitigation*: The audio engine explicitly resets playback position, cleans event listeners, handles `error` events gracefully, and verifies readyState before initiating playback.
+
+---
+
+## D011: Node 24 Native Prebuilt SQLite Dependency Alignment
+
+- **Status**: Accepted
+- **Context**: The deployment and development environment runs Node.js `v24.14.0` (ABI 137). Previous `better-sqlite3@11.6.0` lacked prebuilt binary wheels for Node 24 on Windows/x64, causing `npm install` failures due to missing MSBuild/Python native build tools.
+- **Decision**: Upgrade `better-sqlite3` to `^13.0.3` in `server/package.json`.
+- **Why**:
+  - `better-sqlite3` v13 publishes pre-compiled native N-API binaries for Node.js 24 across all major platforms (Windows, Linux, macOS ARM/x64).
+  - Eliminates native compilation requirements (`node-gyp`, Visual Studio C++ Build Tools, Python toolchains) on developer machines and lightweight production containers.
+- **Alternatives Rejected**:
+  - Requiring developers to install full Visual Studio C++ 2022 build tools and Python: high barrier to entry, fragile in CI/CD.
+  - Switching to `sqlite3` or an asynchronous driver: violates ADR D001 which requires synchronous reads in WAL mode.
+- **Risks & Mitigations**:
+  - *Risk*: API breaking changes between v11 and v13.
+  - *Mitigation*: Prepared statement API, transactions, and pragma interfaces remain 100% compatible. Comprehensive unit and smoke tests verify zero regression.
+
+---
+
+## D012: Multi-Path Migration Resolution for Bundled and Dev Runtimes
+
+- **Status**: Accepted
+- **Context**: When bundling the backend using `tsup` into `server/dist/index.js`, `__dirname` resolves to `server/dist`, where migration SQL files do not naturally reside unless explicitly copied. Running via `tsx` dev server resolves `__dirname` to `server/src/db`.
+- **Decision**: Update `server/src/db/migrator.ts` to probe an array of candidate fallback paths (`migrations`, `../src/db/migrations`, `../../server/src/db/migrations`, `server/src/db/migrations`, `src/db/migrations`, `dist/migrations`).
+- **Why**:
+  - Enables zero-configuration execution across development (`tsx watch`), bundled production (`node dist/index.js`), test runners (`vitest`), and containerized root deployments.
+- **Alternatives Rejected**:
+  - Embedding entire SQL scripts as raw JavaScript template string constants: diminishes syntax highlighting and breaks standard SQL linters.
+- **Risks & Mitigations**:
+  - *Risk*: Misidentifying migration paths in unfamiliar deployment layouts.
+  - *Mitigation*: Migrator throws explicit errors if no valid migration directory is discovered, failing fast during boot.
+

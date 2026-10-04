@@ -6,7 +6,7 @@ export default function AdminGroups() {
   const [search, setSearch] = useState('');
 
   const loadGroups = () => {
-    api.get(\`/admin/groups?search=\${search}\`).then(res => setGroups(res.data.groups)).catch(console.error);
+    api.get(`/admin/groups?search=${encodeURIComponent(search)}`).then(res => setGroups(res.data.groups || [])).catch(console.error);
   };
 
   useEffect(() => {
@@ -14,13 +14,13 @@ export default function AdminGroups() {
   }, [search]);
 
   const handleRegenerate = async (id: string) => {
-    await api.post(\`/admin/groups/\${id}/regenerate-code\`);
+    await api.post(`/admin/groups/${id}/regenerate-code`);
     loadGroups();
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Are you sure?')) {
-      await api.delete(\`/admin/groups/\${id}\`);
+    if (confirm('Are you sure you want to delete this group?')) {
+      await api.delete(`/admin/groups/${id}`);
       loadGroups();
     }
   };
@@ -50,18 +50,24 @@ export default function AdminGroups() {
             </tr>
           </thead>
           <tbody>
-            {groups.map(g => (
-              <tr key={g.id} className="border-b border-gray-800 hover:bg-gray-800/50">
-                <td className="p-4 text-gray-200">{g.name}</td>
-                <td className="p-4 text-gray-400">{g.ownerName}</td>
-                <td className="p-4 text-gray-400">{g.memberCount}</td>
-                <td className="p-4 text-gray-400">{new Date(g.createdAt).toLocaleDateString()}</td>
-                <td className="p-4 flex gap-2 justify-end">
-                  <button onClick={() => handleRegenerate(g.id)} className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded">Regen Code</button>
-                  <button onClick={() => handleDelete(g.id)} className="text-xs bg-red-900/50 text-red-300 hover:bg-red-900 px-3 py-1 rounded">Delete</button>
-                </td>
+            {groups.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="p-8 text-center text-gray-500">No groups found.</td>
               </tr>
-            ))}
+            ) : (
+              groups.map(g => (
+                <tr key={g.id} className="border-b border-gray-800 hover:bg-gray-800/50">
+                  <td className="p-4 text-gray-200">{g.name}</td>
+                  <td className="p-4 text-gray-400">{g.ownerName}</td>
+                  <td className="p-4 text-gray-400">{g.memberCount}</td>
+                  <td className="p-4 text-gray-400">{new Date(g.createdAt).toLocaleDateString()}</td>
+                  <td className="p-4 flex gap-2 justify-end">
+                    <button onClick={() => handleRegenerate(g.id)} className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded">Regen Code</button>
+                    <button onClick={() => handleDelete(g.id)} className="text-xs bg-red-900/50 text-red-300 hover:bg-red-900 px-3 py-1 rounded">Delete</button>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

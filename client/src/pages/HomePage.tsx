@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { useAuthStore } from '../../stores/authStore';
+import { useAuthStore } from '../stores/authStore';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -24,8 +24,8 @@ export default function HomePage() {
             <h1 className="text-3xl font-bold">Welcome back, {user?.displayName || 'Guest'}</h1>
             <p className="text-neutral-400 mt-1">Ready to listen together?</p>
           </div>
-          <div className="w-12 h-12 rounded-full flex items-center justify-center text-2xl" style={{ backgroundColor: user?.color || '#333' }}>
-            {user?.emoji || '👋'}
+          <div className="w-12 h-12 rounded-full flex items-center justify-center text-2xl shadow-lg" style={{ backgroundColor: user?.avatarColor || '#6366f1' }}>
+            {user?.avatarEmoji || '🎵'}
           </div>
         </header>
 

@@ -1,13 +1,43 @@
 import { z } from 'zod';
 import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
 
-dotenv.config();
+// Try loading .env from cwd or parent directories (monorepo root)
+const envCandidates = [
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), '../.env'),
+  path.resolve(process.cwd(), '../../.env'),
+];
+
+for (const candidate of envCandidates) {
+  if (fs.existsSync(candidate)) {
+    dotenv.config({ path: candidate });
+    break;
+  }
+}
+
+// Fallbacks for testing environment
+if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
+  if (!process.env.SESSION_SECRET) {
+    process.env.SESSION_SECRET = 'b5bc31f6d180ce398f508d6a01ca08e26eadabb7c9b8b69b3f70d1218dc67debf638f839c3e2171f4d60b911aafded54';
+  }
+  if (!process.env.ADMIN_EMAIL) {
+    process.env.ADMIN_EMAIL = 'admin@syncwave.local';
+  }
+  if (!process.env.ADMIN_INITIAL_PASSWORD) {
+    process.env.ADMIN_INITIAL_PASSWORD = 'supersecurepassword123';
+  }
+  if (!process.env.BASE_URL) {
+    process.env.BASE_URL = 'http://localhost:3000';
+  }
+}
 
 const configSchema = z.object({
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters'),
-  BASE_URL: z.string().url().default('http://localhost:3000'),
+  BASE_URL: z.string().optional().transform(v => (!v || !v.startsWith('http')) ? 'http://localhost:3000' : v),
   DATA_DIR: z.string().default('./data'),
   
   ADMIN_EMAIL: z.string().email(),

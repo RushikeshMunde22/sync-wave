@@ -46,17 +46,15 @@ router.post('/join', requireAuth, async (req, res, next) => {
 // Get group preview by invite code (public)
 router.get('/join/:code', async (req, res, next) => {
   try {
-    const { code } = req.params;
+    const code = req.params.code as string;
     const group = await GroupService.getGroupByInviteCode(code);
     
     if (!group) {
       return res.status(404).json({ error: 'Invalid or expired invite code' });
     }
     
-    // Only return non-sensitive data
     res.json({
       name: group.name,
-      // Ideally member count would be added here via a specialized query in real impl
     });
   } catch (error) {
     next(error);
@@ -66,7 +64,7 @@ router.get('/join/:code', async (req, res, next) => {
 // Get group details
 router.get('/:id', requireAuth, requireGroupMember, async (req, res, next) => {
   try {
-    const group = await GroupService.getGroup(req.params.id);
+    const group = await GroupService.getGroup(req.params.id as string);
     if (!group) {
       return res.status(404).json({ error: 'Group not found' });
     }
@@ -80,7 +78,7 @@ router.get('/:id', requireAuth, requireGroupMember, async (req, res, next) => {
 router.put('/:id', requireAuth, requireGroupMember, requireGroupAdmin, async (req, res, next) => {
   try {
     const settings = updateGroupSchema.parse(req.body);
-    await GroupService.updateGroupSettings(req.user!.id, req.params.id, settings);
+    await GroupService.updateGroupSettings(req.user!.id, req.params.id as string, settings);
     res.status(200).json({ message: 'Settings updated successfully' });
   } catch (error) {
     next(error);
@@ -90,7 +88,7 @@ router.put('/:id', requireAuth, requireGroupMember, requireGroupAdmin, async (re
 // Delete group
 router.delete('/:id', requireAuth, requireGroupMember, requireGroupOwner, async (req, res, next) => {
   try {
-    await GroupService.deleteGroup(req.user!.id, req.params.id);
+    await GroupService.deleteGroup(req.user!.id, req.params.id as string);
     res.status(200).json({ message: 'Group deleted successfully' });
   } catch (error) {
     next(error);
@@ -100,7 +98,7 @@ router.delete('/:id', requireAuth, requireGroupMember, requireGroupOwner, async 
 // Leave group
 router.post('/:id/leave', requireAuth, requireGroupMember, async (req, res, next) => {
   try {
-    await GroupService.leaveGroup(req.user!.id, req.params.id);
+    await GroupService.leaveGroup(req.user!.id, req.params.id as string);
     res.status(200).json({ message: 'Left group successfully' });
   } catch (error) {
     next(error);
@@ -110,7 +108,7 @@ router.post('/:id/leave', requireAuth, requireGroupMember, async (req, res, next
 // Get members
 router.get('/:id/members', requireAuth, requireGroupMember, async (req, res, next) => {
   try {
-    const members = await GroupService.getGroupMembers(req.params.id);
+    const members = await GroupService.getGroupMembers(req.params.id as string);
     res.json(members);
   } catch (error) {
     next(error);
@@ -118,11 +116,11 @@ router.get('/:id/members', requireAuth, requireGroupMember, async (req, res, nex
 });
 
 // Member actions (promote, demote, kick, transfer)
-router.post('/:id/members/action', requireAuth, requireGroupMember, async (req, res, next) => {
+router.post('/:id/members/action', requireAuth, requireGroupMember, async (req, res, _next) => {
   try {
     const { userId: targetId, action } = memberActionSchema.parse(req.body);
     const actorId = req.user!.id;
-    const groupId = req.params.id;
+    const groupId = req.params.id as string;
 
     if (actorId === targetId) {
       return res.status(400).json({ error: 'Cannot perform action on yourself' });
@@ -145,7 +143,6 @@ router.post('/:id/members/action', requireAuth, requireGroupMember, async (req, 
 
     res.status(200).json({ message: `Member ${action}d successfully` });
   } catch (error) {
-    // Basic error handling assuming service throws Error with messages
     res.status(400).json({ error: (error as Error).message });
   }
 });
@@ -155,7 +152,7 @@ router.post('/:id/invite', requireAuth, requireGroupMember, requireGroupAdmin, a
   try {
     const { action, expiresIn } = inviteActionSchema.parse(req.body);
     const actorId = req.user!.id;
-    const groupId = req.params.id;
+    const groupId = req.params.id as string;
 
     if (action === 'regenerate') {
       const newCode = await GroupService.regenerateInviteCode(actorId, groupId, expiresIn);
@@ -169,4 +166,5 @@ router.post('/:id/invite', requireAuth, requireGroupMember, requireGroupAdmin, a
   }
 });
 
+export { router as groupRouter };
 export default router;

@@ -1,47 +1,214 @@
 import { create } from 'zustand';
 
-interface Track {
+export interface TrackInfo {
   id: string;
   title: string;
   artist: string;
-  duration: number;
-  artworkUrl: string;
-  sourceUrl: string;
+  artworkUrl?: string;
+  durationMs: number;
+  streamUrl?: string;
+  addedBy?: string;
+  attribution?: string;
 }
 
-interface PlaybackState {
-  isPlaying: boolean;
-  position: number;
-  updatedAt: number;
+export interface PlaybackState {
   trackId: string | null;
-  groupId: string | null;
+  isPlaying: boolean;
+  positionMs: number;
+  serverTimeMs: number;
+  version: number;
+  controlledBy: string | null;
+  track?: TrackInfo;
 }
 
-interface PlayerState {
-  playbackState: PlaybackState;
-  queue: Track[];
-  presence: any[];
-  groupInfo: any;
-  setPlaybackState: (state: Partial<PlaybackState>) => void;
-  setQueue: (queue: Track[]) => void;
-  setGroupInfo: (info: any) => void;
+export interface MemberPresence {
+  userId: string;
+  displayName: string;
+  avatarEmoji: string;
+  avatarColor: string;
+  role: string;
+  status: 'listening' | 'paused' | 'buffering';
 }
 
-export const usePlayerStore = create<PlayerState>((set) => ({
-  playbackState: {
-    isPlaying: false,
-    position: 0,
-    updatedAt: Date.now(),
+export interface QueueItem {
+  id: string;
+  trackId: string;
+  title: string;
+  artist: string;
+  artworkUrl?: string;
+  durationMs: number;
+  addedBy: string;
+  addedByName: string;
+  position: number;
+}
+
+export interface RoomState {
+  groupId: string;
+  groupName: string;
+  playback: PlaybackState;
+  queue: QueueItem[];
+  members: MemberPresence[];
+  membersCanControl: boolean;
+  myRole: string;
+}
+
+export interface SkipVoteState {
+  votesNeeded: number;
+  currentVotes: number;
+  voters: string[];
+}
+
+export interface ReactionItem {
+  id: string;
+  userId: string;
+  userName: string;
+  emoji: string;
+  timestamp: number;
+}
+
+interface PlayerStoreState {
+  roomState: RoomState | null;
+  playback: PlaybackState;
+  queue: QueueItem[];
+  members: MemberPresence[];
+  isLocallyPaused: boolean;
+  isAdminPaused: boolean;
+  adminPausedBy: string | null;
+  autoplayBlocked: boolean;
+  skipVote: SkipVoteState | null;
+  reactions: ReactionItem[];
+  currentTimeMs: number;
+  durationMs: number;
+
+  setRoomState: (roomState: RoomState) => void;
+  setPlayback: (playback: PlaybackState) => void;
+  setQueue: (queue: QueueItem[]) => void;
+  setMembers: (members: MemberPresence[]) => void;
+  addMember: (member: MemberPresence) => void;
+  removeMember: (userId: string) => void;
+  updateMemberStatus: (userId: string, status: 'listening' | 'paused' | 'buffering') => void;
+  setLocallyPaused: (paused: boolean) => void;
+  setAdminPaused: (paused: boolean, adminName?: string | null) => void;
+  setAutoplayBlocked: (blocked: boolean) => void;
+  setSkipVote: (skipVote: SkipVoteState | null) => void;
+  addReaction: (reaction: { userId: string; userName: string; emoji: string }) => void;
+  setTime: (currentMs: number, durationMs: number) => void;
+  resetRoom: () => void;
+}
+
+export const usePlayerStore = create<PlayerStoreState>((set) => ({
+  roomState: null,
+  playback: {
     trackId: null,
-    groupId: null,
+    isPlaying: false,
+    positionMs: 0,
+    serverTimeMs: 0,
+    version: 0,
+    controlledBy: null,
   },
   queue: [],
-  presence: [],
-  groupInfo: null,
+  members: [],
+  isLocallyPaused: false,
+  isAdminPaused: false,
+  adminPausedBy: null,
+  autoplayBlocked: false,
+  skipVote: null,
+  reactions: [],
+  currentTimeMs: 0,
+  durationMs: 0,
 
-  setPlaybackState: (state) => set((prev) => ({
-    playbackState: { ...prev.playbackState, ...state, updatedAt: Date.now() }
-  })),
+  setRoomState: (roomState) =>
+    set({
+      roomState,
+      playback: roomState.playback,
+      queue: roomState.queue,
+      members: roomState.members,
+      isLocallyPaused: false,
+      isAdminPaused: !roomState.playback.isPlaying && roomState.playback.controlledBy !== null,
+    }),
+
+  setPlayback: (playback) =>
+    set((prev) => ({
+      playback,
+      durationMs: playback.track?.durationMs ?? prev.durationMs,
+      // If server resumed, clear admin paused banner
+      isAdminPaused: playback.isPlaying ? false : prev.isAdminPaused,
+    })),
+
   setQueue: (queue) => set({ queue }),
-  setGroupInfo: (groupInfo) => set({ groupInfo }),
+
+  setMembers: (members) => set({ members }),
+
+  addMember: (member) =>
+    set((prev) => {
+      const filtered = prev.members.filter((m) => m.userId !== member.userId);
+      return { members: [...filtered, member] };
+    }),
+
+  removeMember: (userId) =>
+    set((prev) => ({
+      members: prev.members.filter((m) => m.userId !== userId),
+    })),
+
+  updateMemberStatus: (userId, status) =>
+    set((prev) => ({
+      members: prev.members.map((m) =>
+        m.userId === userId ? { ...m, status } : m
+      ),
+    })),
+
+  setLocallyPaused: (paused) => set({ isLocallyPaused: paused }),
+
+  setAdminPaused: (paused, adminName = null) =>
+    set({
+      isAdminPaused: paused,
+      adminPausedBy: adminName,
+    }),
+
+  setAutoplayBlocked: (blocked) => set({ autoplayBlocked: blocked }),
+
+  setSkipVote: (skipVote) => set({ skipVote }),
+
+  addReaction: (reaction) =>
+    set((prev) => {
+      const item: ReactionItem = {
+        id: `${Date.now()}-${Math.random()}`,
+        userId: reaction.userId,
+        userName: reaction.userName,
+        emoji: reaction.emoji,
+        timestamp: Date.now(),
+      };
+      // Keep only reactions from the last 8 seconds
+      const now = Date.now();
+      const recent = prev.reactions
+        .filter((r) => now - r.timestamp < 8000)
+        .slice(-15);
+      return { reactions: [...recent, item] };
+    }),
+
+  setTime: (currentTimeMs, durationMs) =>
+    set({ currentTimeMs, durationMs }),
+
+  resetRoom: () =>
+    set({
+      roomState: null,
+      playback: {
+        trackId: null,
+        isPlaying: false,
+        positionMs: 0,
+        serverTimeMs: 0,
+        version: 0,
+        controlledBy: null,
+      },
+      queue: [],
+      members: [],
+      isLocallyPaused: false,
+      isAdminPaused: false,
+      adminPausedBy: null,
+      autoplayBlocked: false,
+      skipVote: null,
+      reactions: [],
+      currentTimeMs: 0,
+      durationMs: 0,
+    }),
 }));

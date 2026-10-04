@@ -1,32 +1,37 @@
 import { create } from 'zustand';
 
-interface User {
+export interface User {
   id: string;
   email: string;
   displayName: string;
-  emoji: string;
-  color: string;
-  isGuest: boolean;
+  avatarEmoji: string;
+  avatarColor: string;
+  role: 'user' | 'superadmin';
+  isBanned?: boolean;
+  createdAt?: string;
+  lastSeenAt?: string;
 }
 
-interface ProfileData {
-  displayName: string;
-  emoji: string;
-  color: string;
+export interface ProfileData {
+  displayName?: string;
+  avatarEmoji?: string;
+  avatarColor?: string;
 }
 
-interface SignupData extends ProfileData {
+export interface SignupData {
   email: string;
   password?: string;
-  isGuest?: boolean;
+  displayName: string;
+  avatarEmoji?: string;
+  avatarColor?: string;
 }
 
 interface AuthState {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password?: string) => Promise<{ recoveryCode?: string }>;
-  signup: (data: SignupData) => Promise<{ recoveryCode: string }>;
+  login: (email: string, password?: string) => Promise<{ user?: User; recoveryCode?: string }>;
+  signup: (data: SignupData) => Promise<{ user?: User; recoveryCode: string }>;
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
   updateProfile: (data: Partial<ProfileData>) => Promise<void>;
@@ -46,7 +51,10 @@ export const useAuthStore = create<AuthState>((set) => ({
         body: JSON.stringify({ email, password }),
         credentials: 'include',
       });
-      if (!res.ok) throw new Error('Login failed');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Login failed');
+      }
       const data = await res.json();
       set({ user: data.user, isAuthenticated: true, isLoading: false });
       return data;
@@ -65,7 +73,10 @@ export const useAuthStore = create<AuthState>((set) => ({
         body: JSON.stringify(data),
         credentials: 'include',
       });
-      if (!res.ok) throw new Error('Signup failed');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Signup failed');
+      }
       const resData = await res.json();
       set({ user: resData.user, isAuthenticated: true, isLoading: false });
       return resData;
@@ -104,13 +115,16 @@ export const useAuthStore = create<AuthState>((set) => ({
   updateProfile: async (data) => {
     set({ isLoading: true });
     try {
-      const res = await fetch('/api/auth/profile', {
+      const res = await fetch('/api/auth/me', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
         credentials: 'include',
       });
-      if (!res.ok) throw new Error('Profile update failed');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Profile update failed');
+      }
       const resData = await res.json();
       set({ user: resData.user, isLoading: false });
     } catch (error) {

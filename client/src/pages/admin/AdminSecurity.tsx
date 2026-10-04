@@ -6,7 +6,8 @@ export default function AdminSecurity() {
   const [actionFilter, setActionFilter] = useState('');
 
   const loadLogs = () => {
-    api.get(\`/admin/audit-log?action=\${actionFilter}\`).then(res => setLogs(res.data.logs)).catch(console.error);
+    const qs = actionFilter ? `?action=${encodeURIComponent(actionFilter)}` : '';
+    api.get(`/admin/audit-log${qs}`).then(res => setLogs(res.data.logs || [])).catch(console.error);
   };
 
   useEffect(() => {
