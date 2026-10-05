@@ -13,6 +13,6 @@ export const TrendingQuerySchema = z.object({
 });
 
 export const TrackParamsSchema = z.object({
-  provider: z.enum(['audius', 'jamendo', 'itunes']),
+  provider: z.enum(['audius', 'jamendo', 'itunes', 'saavn']),
   id: z.string().min(1),
 });

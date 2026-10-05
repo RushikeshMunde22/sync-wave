@@ -58,7 +58,8 @@ export async function seedSuperadmin(): Promise<void> {
         `).run(demoUserId, 'demo@example.com', demoPassword, 'Demo User');
 
         const demoGroupId = uuidv4();
-        const inviteCode = crypto.randomBytes(4).toString('hex').toUpperCase();
+        const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        const inviteCode = Array.from(crypto.randomBytes(10)).map(b => ALPHABET[b % ALPHABET.length]).join('');
         
         db.prepare(`
           INSERT INTO groups (id, name, owner_id, invite_code)

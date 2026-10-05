@@ -242,7 +242,8 @@ export async function resetPasswordByEmail(email: string): Promise<{ tempPasswor
   let tempPassword = 'Sw!';
   const bytes = crypto.randomBytes(9);
   for (let i = 0; i < 9; i++) {
-    tempPassword += charset[bytes[i] % charset.length];
+    const byte = bytes[i] ?? 0;
+    tempPassword += charset.charAt(byte % charset.length);
   }
 
   const passwordHash = await hashPassword(tempPassword);

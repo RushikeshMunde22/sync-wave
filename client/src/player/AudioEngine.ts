@@ -187,6 +187,24 @@ export class AudioEngine {
         artist: track.artist,
         artworkUrl: track.artworkUrl,
       });
+
+      // Synchronize currentTime once audio metadata (duration & seekable) is ready
+      const onMetadataLoaded = () => {
+        if (!this.lastPlaybackState?.isPlaying) return;
+        const syncMs = this.getExpectedPositionMs();
+        try {
+          this.audio.currentTime = Math.max(0, syncMs / 1000);
+        } catch {
+          // ignore seek error if audio still preparing
+        }
+        this.performDriftCheck();
+      };
+
+      if (this.audio.readyState >= 1) {
+        onMetadataLoaded();
+      } else {
+        this.audio.addEventListener('loadedmetadata', onMetadataLoaded, { once: true });
+      }
     }
 
     const expectedPositionMs = this.getExpectedPositionMs();
@@ -201,12 +219,13 @@ export class AudioEngine {
     }
 
     // Room is playing
-    if (isNewTrack) {
+    if (isNewTrack && this.audio.readyState >= 1) {
       this.audio.currentTime = Math.max(0, expectedPositionMs / 1000);
     }
 
     this.playAudio();
     this.startDriftLoop();
+    this.performDriftCheck();
   }
 
   private playAudio(): void {
@@ -243,7 +262,7 @@ export class AudioEngine {
     if (this.driftTimer) return;
     this.driftTimer = setInterval(() => {
       this.performDriftCheck();
-    }, 500);
+    }, 400);
   }
 
   private stopDriftLoop(): void {
@@ -254,10 +273,10 @@ export class AudioEngine {
   }
 
   /**
-   * 3-Tier Drift Correction Algorithm:
-   * Tier 1: |drift| < 150ms -> In sync, rate = 1.0
-   * Tier 2: 150ms <= |drift| <= 1000ms -> Micro-adjust rate (1.05x if behind, 0.95x if ahead)
-   * Tier 3: |drift| > 1000ms -> Hard seek to expected position, restore rate = 1.0
+   * Tight Multi-Device Drift Correction Algorithm:
+   * Tier 1: |drift| < 40ms -> In tight sync, rate = 1.0
+   * Tier 2: 40ms <= |drift| <= 300ms -> Smooth micro-adjust (1.04x if behind, 0.96x if ahead)
+   * Tier 3: |drift| > 300ms -> Immediate hard snap to expected position, restore rate = 1.0
    */
   public performDriftCheck(): void {
     if (!this.lastPlaybackState || !this.lastPlaybackState.isPlaying || this.isLocallyPaused || this.audio.paused) {
@@ -269,21 +288,21 @@ export class AudioEngine {
     const driftMs = currentMs - expectedMs;
     const absDriftMs = Math.abs(driftMs);
 
-    if (absDriftMs > 1000) {
-      // Tier 3: Hard Resync (>1000ms)
+    if (absDriftMs > 300) {
+      // Tier 3: Immediate hard snap for simultaneous multi-device playback
       this.audio.currentTime = Math.max(0, expectedMs / 1000);
       this.audio.playbackRate = 1.0;
-    } else if (absDriftMs >= 150) {
-      // Tier 2: Micro-rate adjustment (150ms - 1000ms)
+    } else if (absDriftMs >= 40) {
+      // Tier 2: Smooth micro-rate adjustment (40ms - 300ms)
       if (driftMs < 0) {
-        // Audio is behind server -> speed up
-        this.audio.playbackRate = 1.05;
+        // Audio is behind server -> speed up smoothly
+        this.audio.playbackRate = 1.04;
       } else {
-        // Audio is ahead of server -> slow down
-        this.audio.playbackRate = 0.95;
+        // Audio is ahead of server -> slow down smoothly
+        this.audio.playbackRate = 0.96;
       }
-    } else if (absDriftMs < 50) {
-      // Converged back into tight sync
+    } else if (absDriftMs < 20) {
+      // Converged back into exact synchronization
       if (this.audio.playbackRate !== 1.0) {
         this.audio.playbackRate = 1.0;
       }

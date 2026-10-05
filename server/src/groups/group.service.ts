@@ -32,14 +32,19 @@ export interface GroupWithMeta extends Group {
   myRole: 'owner' | 'admin' | 'member';
 }
 
+// 10-character invite codes from a 32-char unambiguous alphabet
+// Gives 32^10 = 1.1 quadrillion unique combinations — zero shortage risk
 const INVITE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const INVITE_CODE_LENGTH = 10;
 
 export const generateInviteCode = (): string => {
   let code = '';
-  const bytes = crypto.randomBytes(8);
-  for (let i = 0; i < 8; i++) {
+  // Use 10 cryptographically random bytes, one per character
+  const bytes = crypto.randomBytes(INVITE_CODE_LENGTH);
+  for (let i = 0; i < INVITE_CODE_LENGTH; i++) {
     const byte = bytes[i];
     if (byte !== undefined) {
+      // Modulo bias is negligible: 256 / 32 = exactly 8, no bias
       code += INVITE_ALPHABET[byte % INVITE_ALPHABET.length];
     }
   }
@@ -87,13 +92,23 @@ export const getGroup = async (groupId: string): Promise<Group | null> => {
 
 export const getGroupByInviteCode = async (code: string): Promise<Group | null> => {
   const db = getDb();
-  const row = db.prepare(`
+  let row = db.prepare(`
     SELECT * FROM groups 
     WHERE invite_code = ? 
       AND invite_revoked = 0 
       AND is_closed = 0 
       AND (invite_expires_at IS NULL OR datetime(invite_expires_at) > datetime('now'))
   `).get(code);
+
+  // Fallback: If not found by invite_code, check if code is a groupId (UUID)
+  if (!row) {
+    row = db.prepare(`
+      SELECT * FROM groups 
+      WHERE id = ? 
+        AND is_closed = 0
+    `).get(code);
+  }
+
   if (!row) return null;
   return mapGroupDbToModel(row);
 };
@@ -124,7 +139,10 @@ export const getUserGroups = async (userId: string): Promise<GroupWithMeta[]> =>
   }));
 };
 
-export const joinGroup = async (userId: string, code: string): Promise<{ group?: Group; error?: string }> => {
+export const joinGroup = async (
+  userId: string,
+  code: string,
+): Promise<{ group?: Group; error?: string; requiresApproval?: boolean }> => {
   const db = getDb();
   const group = await getGroupByInviteCode(code);
   
@@ -166,9 +184,10 @@ export const joinGroup = async (userId: string, code: string): Promise<{ group?:
     db.prepare('DELETE FROM group_join_requests WHERE group_id = ? AND user_id = ?').run(group.id, userId);
   }
 
+  // If already a member, return group successfully (not an error!)
   const isMember = await isGroupMember(userId, group.id);
   if (isMember) {
-    return { error: 'Already a member of this group' };
+    return { group };
   }
 
   const countRow = db.prepare('SELECT COUNT(*) as count FROM group_members WHERE group_id = ?').get(group.id) as { count: number };

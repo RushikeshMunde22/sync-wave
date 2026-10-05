@@ -9,6 +9,7 @@ import {
 import { socketRateLimiter, validateSocketPayload, socketAuthMiddleware } from './sync.middleware.js';
 import { User } from '../auth/auth.service.js';
 import { getGroup, getMemberRole } from '../groups/group.service.js';
+import { getDb } from '../db/database.js';
 
 // Schemas for validating incoming payloads
 const groupIdSchema = z.object({ groupId: z.string().min(1) });
@@ -94,17 +95,43 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
       try {
         const { groupId } = validateSocketPayload(groupIdSchema, data);
         
-        // Verify real membership
-        const role = await getMemberRole(user.id, groupId);
-        if (!role) {
-          ack({ success: false, error: 'You are not a member of this group' });
-          return;
-        }
-
         const group = await getGroup(groupId);
         if (!group) {
           ack({ success: false, error: 'Group not found' });
           return;
+        }
+
+        // Verify real membership
+        let role = await getMemberRole(user.id, groupId);
+        if (!role) {
+          if (group.isClosed) {
+            ack({ success: false, error: 'This room is closed' });
+            return;
+          }
+
+          // Check if user was kicked
+          const db = getDb();
+          const kicked = db.prepare('SELECT 1 FROM group_kicked_users WHERE group_id = ? AND user_id = ?').get(groupId, user.id);
+          if (kicked) {
+            ack({ success: false, error: 'You were previously removed from this room by moderators' });
+            return;
+          }
+
+          // Check room capacity
+          const memberCountRow = db.prepare('SELECT COUNT(*) as c FROM group_members WHERE group_id = ?').get(groupId) as { c: number };
+          if (memberCountRow && memberCountRow.c >= group.maxMembers) {
+            ack({ success: false, error: 'This room is currently full' });
+            return;
+          }
+
+          // Auto-enroll user as member
+          db.prepare(`
+            INSERT OR IGNORE INTO group_members (group_id, user_id, role, joined_at)
+            VALUES (?, ?, 'member', datetime('now'))
+          `).run(groupId, user.id);
+
+          role = (await getMemberRole(user.id, groupId)) || 'member';
+          console.log(`[SyncHandler] Auto-enrolled user ${user.id} into open room ${groupId}`);
         }
 
         socket.join(groupId);
@@ -131,6 +158,8 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
           state: {
             groupId,
             groupName: group.name,
+            inviteCode: group.inviteCode,
+            theme: group.theme,
             playback,
             queue,
             members,

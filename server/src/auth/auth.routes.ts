@@ -167,9 +167,13 @@ router.put('/me', requireAuth, (req, res) => {
 router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
   try {
     const data = forgotPasswordSchema.parse(req.body);
+    console.log('[Auth] Forgot password requested for:', data.email);
     const resetResult = await resetPasswordByEmail(data.email);
     if (resetResult) {
+      console.log('[Auth] Resetting password and dispatching email to:', resetResult.user.email);
       await sendPasswordRecoveryEmail(resetResult.user.email, resetResult.tempPassword, true);
+    } else {
+      console.log('[Auth] No registered user found for email:', data.email, '- Email dispatch skipped.');
     }
     
     res.json({

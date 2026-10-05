@@ -125,8 +125,11 @@ export function deleteGroup(actorId: string, groupId: string) {
 }
 
 export function regenerateInviteCode(actorId: string, groupId: string) {
+  // 10-char code from 32-char unambiguous alphabet = 32^10 possibilities
+  const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = randomBytes(10);
+  const code = Array.from(bytes).map(b => ALPHABET[b % ALPHABET.length]).join('');
   const db = getDb();
-  const code = randomBytes(4).toString('hex');
   db.prepare('UPDATE groups SET invite_code = ? WHERE id = ?').run(code, groupId);
   logAudit(actorId, 'group.regenerate_code', groupId, { code });
   return code;

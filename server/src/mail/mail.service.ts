@@ -1,21 +1,38 @@
-import nodemailer from 'nodemailer';
+import nodemailer, { type Transporter } from 'nodemailer';
 import { config } from '../config.js';
 
-let transporter: nodemailer.Transporter | null = null;
+let transporter: Transporter | null = null;
+let transporterVerified = false;
 
-function getTransporter(): nodemailer.Transporter | null {
+function getTransporter(): Transporter | null {
   if (!transporter) {
     const user = config.EMAIL_USER;
-    const pass = config.EMAIL_PASS;
+    const rawPass = config.EMAIL_PASS;
+    // Gmail App Passwords have spaces (e.g. "qstw eemt rqxd ltsj") — strip them
+    const pass = rawPass ? rawPass.replace(/\s+/g, '') : '';
 
     if (user && pass) {
       transporter = nodemailer.createTransport({
         service: 'gmail',
         auth: { user, pass },
+        tls: { rejectUnauthorized: false },
       });
-      console.log('[Mail] Nodemailer configured with Gmail SMTP:', user);
+      console.log('[Mail] Nodemailer configured with Gmail SMTP for:', user);
+
+      // Verify connection in background (non-blocking)
+      if (!transporterVerified) {
+        transporter.verify().then(() => {
+          transporterVerified = true;
+          console.log('[Mail] SMTP connection verified successfully.');
+        }).catch((err: any) => {
+          console.error('[Mail] SMTP verification FAILED:', err.message || err);
+          console.error('[Mail] Emails will NOT be delivered. Check EMAIL_USER/EMAIL_PASS in .env');
+          // Reset so we retry on next send
+          transporter = null;
+        });
+      }
     } else {
-      console.warn('[Mail] EMAIL_USER or EMAIL_PASS not set. Emails will be logged to console.');
+      console.warn('[Mail] EMAIL_USER or EMAIL_PASS not set. Emails will be logged to console only.');
     }
   }
   return transporter;

@@ -65,6 +65,8 @@ export interface MemberPresence {
 export interface RoomState {
   groupId: string;
   groupName: string;
+  inviteCode?: string;
+  theme?: string;
   playback: PlaybackState;
   queue: QueueItem[];
   members: MemberPresence[];

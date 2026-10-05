@@ -1,6 +1,6 @@
 export interface Track {
   id: string;
-  provider: 'audius' | 'jamendo' | 'itunes';
+  provider: 'audius' | 'jamendo' | 'itunes' | 'saavn';
   providerTrackId: string;
   title: string;
   artist: string;
@@ -18,7 +18,7 @@ export interface SearchResult {
 }
 
 export interface MusicProvider {
-  name: 'audius' | 'jamendo' | 'itunes';
+  name: 'audius' | 'jamendo' | 'itunes' | 'saavn';
   isAvailable(): Promise<boolean>;
   search(query: string, limit?: number, offset?: number): Promise<SearchResult>;
   trending(limit?: number, offset?: number, genre?: string): Promise<SearchResult>;

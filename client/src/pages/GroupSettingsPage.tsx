@@ -6,18 +6,20 @@ import { api } from '../lib/api.js';
 interface GroupData {
   id: string;
   name: string;
-  owner_id: string;
-  invite_code: string;
-  members_can_control: number;
+  ownerId: string;
+  inviteCode: string;
+  membersCanControl: boolean;
+  maxMembers: number;
+  theme: string;
 }
 
 interface MemberData {
-  id: string;
-  user_id: string;
-  display_name: string;
-  avatar_emoji: string;
-  avatar_color: string;
-  role: 'owner' | 'admin' | 'listener';
+  userId: string;
+  displayName: string;
+  avatarEmoji: string;
+  avatarColor: string;
+  role: 'owner' | 'admin' | 'member';
+  joinedAt: string;
 }
 
 export default function GroupSettingsPage() {
@@ -54,8 +56,8 @@ export default function GroupSettingsPage() {
   }, [id]);
 
   const copyInvite = () => {
-    if (!group?.invite_code) return;
-    const inviteUrl = `${window.location.origin}/join/${group.invite_code}`;
+    if (!group?.inviteCode) return;
+    const inviteUrl = `https://syncwave.work.gd/join/${group.inviteCode}`;
     navigator.clipboard.writeText(inviteUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -66,10 +68,9 @@ export default function GroupSettingsPage() {
     try {
       const res = await api.post(`/api/groups/${id}/invite`, {
         action: 'regenerate',
-        expiresIn: '7d',
       });
       if (res.data?.inviteCode) {
-        setGroup((prev) => (prev ? { ...prev, invite_code: res.data.inviteCode } : null));
+        setGroup((prev) => (prev ? { ...prev, inviteCode: res.data.inviteCode } : null));
         setMessage('Invite code regenerated.');
       }
     } catch (err: any) {
@@ -91,11 +92,11 @@ export default function GroupSettingsPage() {
   const toggleMembersCanControl = async () => {
     if (!id || !group) return;
     try {
-      const updatedVal = group.members_can_control ? 0 : 1;
+      const updatedVal = !group.membersCanControl;
       await api.put(`/api/groups/${id}`, {
-        members_can_control: Boolean(updatedVal),
+        membersCanControl: updatedVal,
       });
-      setGroup({ ...group, members_can_control: updatedVal });
+      setGroup({ ...group, membersCanControl: updatedVal });
       setMessage('Permissions updated.');
     } catch (err: any) {
       setError(err.message || 'Failed to update permissions');
@@ -122,8 +123,8 @@ export default function GroupSettingsPage() {
     }
   };
 
-  const myMembership = members.find((m) => m.user_id === user?.id);
-  const isOwner = group?.owner_id === user?.id || myMembership?.role === 'owner';
+  const myMembership = members.find((m) => m.userId === user?.id);
+  const isOwner = group?.ownerId === user?.id || myMembership?.role === 'owner';
   const isAdmin = isOwner || myMembership?.role === 'admin' || user?.role === 'superadmin';
 
   if (loading) {
@@ -169,7 +170,7 @@ export default function GroupSettingsPage() {
           <h2 className="text-lg font-semibold">Invite Link & Code</h2>
           <div className="flex items-center gap-3">
             <div className="flex-1 bg-neutral-950 px-4 py-3 rounded-xl font-mono text-base tracking-wider text-center border border-neutral-800 truncate">
-              {group?.invite_code || 'No code generated'}
+            {group?.inviteCode || 'No code generated'}
             </div>
             <button
               onClick={copyInvite}
@@ -201,12 +202,12 @@ export default function GroupSettingsPage() {
               <button
                 onClick={toggleMembersCanControl}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  group?.members_can_control ? 'bg-indigo-600' : 'bg-neutral-700'
+                  group?.membersCanControl ? 'bg-indigo-600' : 'bg-neutral-700'
                 }`}
               >
                 <span
                   className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    group?.members_can_control ? 'translate-x-6' : 'translate-x-1'
+                    group?.membersCanControl ? 'translate-x-6' : 'translate-x-1'
                   }`}
                 />
               </button>
@@ -222,20 +223,20 @@ export default function GroupSettingsPage() {
           <div className="space-y-2.5">
             {members.map((member) => (
               <div
-                key={member.user_id}
+                key={member.userId}
                 className="flex items-center justify-between p-3 bg-neutral-950 rounded-xl border border-neutral-800/80"
               >
                 <div className="flex items-center gap-3">
                   <div
                     className="w-10 h-10 rounded-full flex items-center justify-center text-lg"
-                    style={{ backgroundColor: member.avatar_color || '#3730a3' }}
+                    style={{ backgroundColor: member.avatarColor || '#3730a3' }}
                   >
-                    {member.avatar_emoji || '👤'}
+                    {member.avatarEmoji || '👤'}
                   </div>
                   <div>
                     <div className="font-semibold text-sm flex items-center gap-1.5">
-                      <span>{member.display_name}</span>
-                      {member.user_id === user?.id && (
+                      <span>{member.displayName}</span>
+                      {member.userId === user?.id && (
                         <span className="text-[10px] bg-neutral-800 text-neutral-400 px-1.5 py-0.5 rounded">You</span>
                       )}
                     </div>
@@ -243,19 +244,19 @@ export default function GroupSettingsPage() {
                   </div>
                 </div>
 
-                {isAdmin && member.user_id !== user?.id && member.role !== 'owner' && (
+                {isAdmin && member.userId !== user?.id && member.role !== 'owner' && (
                   <div className="flex items-center gap-2">
                     {isOwner && (
                       member.role === 'admin' ? (
                         <button
-                          onClick={() => handleMemberAction(member.user_id, 'demote')}
+                          onClick={() => handleMemberAction(member.userId, 'demote')}
                           className="text-xs px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 rounded-lg text-neutral-300"
                         >
                           Demote
                         </button>
                       ) : (
                         <button
-                          onClick={() => handleMemberAction(member.user_id, 'promote')}
+                          onClick={() => handleMemberAction(member.userId, 'promote')}
                           className="text-xs px-2.5 py-1 bg-indigo-900/40 hover:bg-indigo-900/60 rounded-lg text-indigo-300"
                         >
                           Make Admin
@@ -263,7 +264,7 @@ export default function GroupSettingsPage() {
                       )
                     )}
                     <button
-                      onClick={() => handleMemberAction(member.user_id, 'kick')}
+                      onClick={() => handleMemberAction(member.userId, 'kick')}
                       className="text-xs px-2.5 py-1 bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 rounded-lg"
                     >
                       Kick

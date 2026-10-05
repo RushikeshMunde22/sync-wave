@@ -7,7 +7,7 @@ export const createGroupSchema = z.object({
 });
 
 export const joinGroupSchema = z.object({
-  code: z.string().trim().min(4).max(64)
+  code: z.string().trim().min(10).max(10).regex(/^[A-Z2-9]{10}$/, 'Invalid invite code format')
 });
 
 export const updateGroupSchema = z.object({

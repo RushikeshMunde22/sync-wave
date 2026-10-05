@@ -36,7 +36,7 @@ const THEMES = [
   { id: 'lofi', name: 'Midnight Lo-Fi', emoji: '🌙', desc: 'Nocturnal dusty charcoal mood', color: 'from-violet-600 to-neutral-900' },
 ];
 
-const GENRES = ['Trending', 'Pop', 'Hip-Hop', 'Electronic', 'Rock', 'Lo-Fi', 'R&B', 'Bollywood'];
+const GENRES = ['Trending', 'Bollywood', 'Hindi', 'Punjabi', 'Pop', 'Hip-Hop', 'Electronic', 'Rock', 'Lo-Fi', 'R&B', 'Tamil', 'Telugu'];
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -177,8 +177,13 @@ export default function HomePage() {
   const handleQuickJoin = (e: React.FormEvent) => {
     e.preventDefault();
     setJoinError('');
-    if (!joinCode.trim()) return;
-    navigate(`/join/${joinCode.trim().toUpperCase()}`);
+    const code = joinCode.trim().toUpperCase().replace(/\s+/g, '');
+    if (!code) return;
+    if (code.length !== 10) {
+      setJoinError('Invite codes are exactly 10 characters.');
+      return;
+    }
+    navigate(`/join/${code}`);
   };
 
   const copyInvite = (code: string) => {
@@ -309,9 +314,9 @@ export default function HomePage() {
             <form onSubmit={handleQuickJoin} className="mt-4 flex gap-2">
               <input
                 type="text"
-                placeholder="Code (e.g. 7X8Y9Z)"
+                placeholder="10-character invite code"
                 value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value)}
+                onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 10))}
                 className="w-full bg-neutral-950 border border-neutral-800 focus:border-indigo-500 px-3.5 py-2.5 rounded-xl text-xs font-mono uppercase tracking-wider outline-none text-white transition-colors"
               />
               <button

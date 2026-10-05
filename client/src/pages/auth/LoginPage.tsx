@@ -16,11 +16,16 @@ export default function LoginPage() {
     try {
       await login(email, password);
       const currentUser = useAuthStore.getState().user;
+      const searchParams = new URLSearchParams(window.location.search);
+      const redirectUrl = searchParams.get('redirect');
+
       if (
         currentUser?.role === 'superadmin' ||
         email.toLowerCase() === 'munderushikesh66@gmail.com'
       ) {
         navigate('/admin/dashboard');
+      } else if (redirectUrl && redirectUrl.startsWith('/')) {
+        navigate(redirectUrl);
       } else {
         navigate('/');
       }

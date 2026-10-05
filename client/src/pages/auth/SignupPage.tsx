@@ -28,8 +28,13 @@ export default function SignupPage() {
         avatarEmoji: emoji, 
         avatarColor: color 
       });
+      const searchParams = new URLSearchParams(window.location.search);
+      const redirectUrl = searchParams.get('redirect');
+
       if (res.recoveryCode) {
         setRecoveryCode(res.recoveryCode);
+      } else if (redirectUrl && redirectUrl.startsWith('/')) {
+        navigate(redirectUrl);
       } else {
         navigate('/');
       }
@@ -143,7 +148,11 @@ export default function SignupPage() {
               {recoveryCode}
             </div>
             <button 
-              onClick={() => navigate('/')}
+              onClick={() => {
+                const searchParams = new URLSearchParams(window.location.search);
+                const redirectUrl = searchParams.get('redirect');
+                navigate(redirectUrl && redirectUrl.startsWith('/') ? redirectUrl : '/');
+              }}
               className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg py-3 font-semibold transition-colors"
             >
               I've saved it

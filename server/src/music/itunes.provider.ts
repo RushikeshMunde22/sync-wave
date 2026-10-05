@@ -79,8 +79,28 @@ export class ITunesProvider implements MusicProvider {
   }
 
   async trending(limit = 20, offset = 0, genre?: string): Promise<SearchResult> {
-    const term = genre && genre !== 'All' ? `${genre} hits` : 'top hits 2026';
-    return this.search(term, limit, offset);
+    // Map genre to iTunes-friendly search term, including Indian genres
+    const genreMap: Record<string, string> = {
+      bollywood: 'bollywood hindi songs 2025',
+      hindi: 'hindi songs top 2025',
+      punjabi: 'punjabi songs 2025',
+      tamil: 'tamil songs 2025',
+      telugu: 'telugu songs 2025',
+      pop: 'pop hits 2025',
+      'hip-hop': 'hip hop 2025',
+      electronic: 'electronic dance 2025',
+      rock: 'rock hits 2025',
+      'r&b': 'r&b soul 2025',
+      'lo-fi': 'lofi chill beats',
+    };
+
+    const term = genre && genreMap[genre.toLowerCase()]
+      ? genreMap[genre.toLowerCase()]
+      : genre && genre !== 'All' && genre !== 'Trending'
+        ? `${genre} hits 2025`
+        : 'top hits 2026';
+
+    return this.search(term ?? 'top hits 2026', limit, offset);
   }
 
   async getTrack(providerTrackId: string): Promise<Track | null> {

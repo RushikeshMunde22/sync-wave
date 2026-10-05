@@ -45,10 +45,12 @@ export default function RoomPage() {
   } = usePlayerStore();
 
   const [showQueueModal, setShowQueueModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
   const [copiedInvite, setCopiedInvite] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeQueueTab, setActiveQueueTab] = useState<'queue' | 'search' | 'playlists'>('queue');
   const [userPlaylists, setUserPlaylists] = useState<any[]>([]);
@@ -112,7 +114,13 @@ export default function RoomPage() {
           setRoomState(response.state);
           audioEngine.syncWithState(response.state.playback);
         } else {
-          setErrorMessage(response?.error || 'Failed to enter listening room.');
+          const errMsg = response?.error || 'Failed to enter listening room.';
+          // If not a member, redirect home rather than showing broken room
+          if (errMsg.toLowerCase().includes('not a member') || errMsg.toLowerCase().includes('not found')) {
+            navigate('/', { replace: true });
+          } else {
+            setErrorMessage(errMsg);
+          }
         }
       });
     };
@@ -359,11 +367,19 @@ export default function RoomPage() {
   };
 
   const copyInviteLink = () => {
-    const inviteCode = (roomState as any)?.inviteCode || id;
-    const inviteUrl = `https://syncwave.work.gd/join/${inviteCode}`;
+    const inviteCode = roomState?.inviteCode || id || '';
+    const inviteUrl = `${window.location.origin}/join/${inviteCode}`;
     navigator.clipboard.writeText(inviteUrl);
     setCopiedInvite(true);
     setTimeout(() => setCopiedInvite(false), 2500);
+  };
+
+  const copyRoomCode = () => {
+    const inviteCode = roomState?.inviteCode || '';
+    if (!inviteCode) return;
+    navigator.clipboard.writeText(inviteCode);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2500);
   };
 
   const formatTime = (ms: number) => {
@@ -377,7 +393,7 @@ export default function RoomPage() {
   const isPlaying = playback.isPlaying && !isLocallyPaused;
   const progressPercent = durationMs > 0 ? Math.min(100, (currentTimeMs / durationMs) * 100) : 0;
 
-  const roomTheme = (roomState as any)?.theme || 'default';
+  const roomTheme = roomState?.theme || 'default';
   const themeGlowStyles: Record<string, string> = {
     default: 'from-indigo-600/15 via-violet-900/10 to-transparent',
     blossom: 'from-pink-500/20 via-rose-600/15 to-transparent',
@@ -428,30 +444,44 @@ export default function RoomPage() {
       </div>
 
       {/* Header */}
-      <header className="z-10 px-6 py-4 flex items-center justify-between border-b border-neutral-800/80 bg-neutral-950/60 backdrop-blur-md">
+      <header className="z-10 px-4 sm:px-6 py-3.5 flex items-center justify-between border-b border-neutral-800/80 bg-neutral-950/60 backdrop-blur-md">
         <button
           onClick={() => navigate('/')}
-          className="flex items-center gap-1.5 text-neutral-400 hover:text-white transition-colors text-sm font-medium"
+          className="flex items-center gap-1 text-neutral-400 hover:text-white transition-colors text-xs sm:text-sm font-medium"
         >
           <span>←</span> Rooms
         </button>
 
         <div className="flex flex-col items-center">
-          <h1 className="text-base font-bold truncate max-w-[200px] md:max-w-md">
+          <h1 className="text-sm sm:text-base font-bold truncate max-w-[160px] sm:max-w-xs md:max-w-md">
             {roomState?.groupName || 'Listening Room'}
           </h1>
-          <span className="text-[11px] text-neutral-400 flex items-center gap-1">
-            <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-            {isConnected ? `${members.length} listening` : 'Connecting...'}
-          </span>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="text-[11px] text-neutral-400 flex items-center gap-1">
+              <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+              {isConnected ? `${members.length} listening` : 'Connecting...'}
+            </span>
+            {roomState?.inviteCode && (
+              <button
+                onClick={() => setShowInviteModal(true)}
+                className="text-[11px] bg-indigo-950/90 border border-indigo-500/40 hover:border-indigo-400 text-indigo-300 font-mono px-2 py-0.5 rounded-full transition-all flex items-center gap-1 shadow-sm"
+                title="Click to view Room Code & Invite Link"
+              >
+                <span className="text-[10px] text-neutral-400">Code:</span>
+                <span className="font-bold tracking-wider">{roomState.inviteCode}</span>
+                <span className="text-[10px]">📋</span>
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
           <button
-            onClick={copyInviteLink}
-            className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-xs font-medium rounded-full transition-colors flex items-center gap-1"
+            onClick={() => setShowInviteModal(true)}
+            className="px-3 sm:px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-full transition-colors flex items-center gap-1.5 shadow-md shadow-indigo-600/25"
           >
-            {copiedInvite ? '✓ Copied' : '🔗 Invite'}
+            <span>🔗</span>
+            <span>Invite</span>
           </button>
           {isHostOrAdmin && (
             <button
@@ -886,6 +916,85 @@ export default function RoomPage() {
                   </div>
                 )}
               </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Invite Friends Modal */}
+        {showInviteModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-md p-6 shadow-2xl relative"
+            >
+              <button
+                onClick={() => setShowInviteModal(false)}
+                className="absolute top-5 right-5 text-neutral-400 hover:text-white p-2 text-lg leading-none"
+              >
+                ✕
+              </button>
+
+              <div className="text-center mb-6">
+                <span className="text-3xl">🎉</span>
+                <h2 className="text-xl font-bold text-white mt-2">Invite Friends to Listen</h2>
+                <p className="text-xs text-neutral-400 mt-1">
+                  Share this room code or link to listen together in sync
+                </p>
+              </div>
+
+              {/* 10-Character Room Code */}
+              <div className="bg-neutral-950 border border-neutral-800 rounded-2xl p-4 mb-4 text-center">
+                <span className="text-[11px] uppercase tracking-wider text-neutral-400 font-semibold block mb-1.5">
+                  10-Character Room Code
+                </span>
+                <div className="flex items-center justify-center gap-3">
+                  <span className="font-mono text-2xl font-extrabold text-indigo-400 tracking-widest select-all">
+                    {roomState?.inviteCode || id?.slice(0, 10).toUpperCase() || 'SYNCWAVE01'}
+                  </span>
+                  <button
+                    onClick={copyRoomCode}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 shadow"
+                  >
+                    {copiedCode ? '✓ Copied' : 'Copy Code'}
+                  </button>
+                </div>
+                <p className="text-[11px] text-neutral-500 mt-2">
+                  Friends can enter this code in <strong>Quick Join</strong> on the homepage
+                </p>
+              </div>
+
+              {/* Shareable Link */}
+              <div className="bg-neutral-950 border border-neutral-800 rounded-2xl p-4 mb-6">
+                <span className="text-[11px] uppercase tracking-wider text-neutral-400 font-semibold block mb-1.5">
+                  Direct Shareable Link
+                </span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${window.location.origin}/join/${roomState?.inviteCode || id || ''}`}
+                    className="flex-1 bg-neutral-900 border border-neutral-700 rounded-xl px-3 py-2 text-xs text-neutral-300 font-mono outline-none select-all"
+                  />
+                  <button
+                    onClick={copyInviteLink}
+                    className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl text-xs font-semibold transition-colors flex-shrink-0"
+                  >
+                    {copiedInvite ? '✓ Copied' : 'Copy Link'}
+                  </button>
+                </div>
+                <p className="text-[11px] text-neutral-500 mt-2">
+                  Anyone with this link can click to immediately enter and synchronize
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowInviteModal(false)}
+                className="w-full py-2.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl text-xs font-semibold transition-colors"
+              >
+                Done
+              </button>
             </motion.div>
           </div>
         )}
