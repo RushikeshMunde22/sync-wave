@@ -62,7 +62,12 @@ app.use(helmet({
         'https://api.jamendo.com', 
         'https://itunes.apple.com', 
         'https://*.apple.com',
-        'https://audio-ssl.itunes.apple.com'
+        'https://audio-ssl.itunes.apple.com',
+        'https://musicapi.x007.workers.dev',
+        'https://*.jiosaavn.com',
+        'https://*.saavn.com',
+        'https://*.saavncdn.com',
+        'https://hls-server.vercel.app'
       ],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],

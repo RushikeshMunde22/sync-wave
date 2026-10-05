@@ -3,12 +3,14 @@ import { AudiusProvider } from './audius.provider.js';
 import { JamendoProvider } from './jamendo.provider.js';
 import { ITunesProvider } from './itunes.provider.js';
 import { SaavnProvider } from './saavn.provider.js';
+import { MusicApiWorkerProvider } from './musicapi.provider.js';
 
 export class ProviderManager {
   private providers: Map<string, MusicProvider> = new Map();
   private audius: AudiusProvider;
   private itunes: ITunesProvider;
   private saavn: SaavnProvider;
+  private musicapi: MusicApiWorkerProvider;
   private jamendo: JamendoProvider | null = null;
   private healthStatuses: Record<string, boolean> = {};
 
@@ -16,9 +18,11 @@ export class ProviderManager {
     this.audius = new AudiusProvider();
     this.itunes = new ITunesProvider();
     this.saavn = new SaavnProvider();
+    this.musicapi = new MusicApiWorkerProvider();
     this.providers.set('audius', this.audius);
     this.providers.set('itunes', this.itunes);
     this.providers.set('saavn', this.saavn);
+    this.providers.set('musicapi', this.musicapi);
 
     const jamendoClientId = process.env.JAMENDO_CLIENT_ID;
     if (jamendoClientId) {
@@ -47,8 +51,9 @@ export class ProviderManager {
 
     const promises: Promise<SearchResult>[] = [
       this.itunes.search(query, limit, offset).catch(() => ({ tracks: [], hasMore: false })),
-      this.audius.search(query, limit, offset).catch(() => ({ tracks: [], hasMore: false })),
       this.saavn.search(query, limit, offset).catch(() => ({ tracks: [], hasMore: false })),
+      this.musicapi.search(query, limit, offset).catch(() => ({ tracks: [], hasMore: false })),
+      this.audius.search(query, limit, offset).catch(() => ({ tracks: [], hasMore: false })),
     ];
 
     if (this.jamendo) {
@@ -59,9 +64,9 @@ export class ProviderManager {
     const combinedTracks: Track[] = [];
     const seenTitles = new Set<string>();
 
-    // For Indian queries, prioritize Saavn results first
+    // For Indian queries, prioritize Saavn and MusicAPI results first
     const orderedResults = (isIndianQuery
-      ? [results[2], results[0], results[1], ...(results[3] ? [results[3]] : [])]
+      ? [results[1], results[2], results[0], results[3], ...(results[4] ? [results[4]] : [])]
       : results
     ).filter((result): result is SearchResult => Boolean(result));
 
@@ -87,8 +92,9 @@ export class ProviderManager {
 
     const promises: Promise<SearchResult>[] = [
       this.itunes.trending(limit, offset, genre).catch(() => ({ tracks: [], hasMore: false })),
-      this.audius.trending(limit, offset, genre).catch(() => ({ tracks: [], hasMore: false })),
       this.saavn.trending(limit, offset, genre).catch(() => ({ tracks: [], hasMore: false })),
+      this.musicapi.trending(limit, offset, genre).catch(() => ({ tracks: [], hasMore: false })),
+      this.audius.trending(limit, offset, genre).catch(() => ({ tracks: [], hasMore: false })),
     ];
 
     if (this.jamendo) {
@@ -99,9 +105,9 @@ export class ProviderManager {
     const combinedTracks: Track[] = [];
     const seenTitles = new Set<string>();
 
-    // For Indian genres, prioritize Saavn
+    // For Indian genres, prioritize Saavn & MusicAPI
     const orderedResults = (isIndianGenre
-      ? [results[2], results[0], results[1], ...(results[3] ? [results[3]] : [])]
+      ? [results[1], results[2], results[0], results[3], ...(results[4] ? [results[4]] : [])]
       : results
     ).filter((result): result is SearchResult => Boolean(result));
 

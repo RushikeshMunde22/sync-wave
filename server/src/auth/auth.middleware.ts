@@ -60,17 +60,40 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction) 
   }
 
   const origin = req.headers.origin || req.headers.referer;
-  const baseUrl = config.BASE_URL;
 
   if (!origin) {
     res.status(403).json({ error: 'CSRF token missing or invalid (no origin header)' });
     return;
   }
 
-  const normalizedOrigin = new URL(origin).origin;
-  const normalizedBase = new URL(baseUrl).origin;
+  let normalizedOrigin: string;
+  try {
+    normalizedOrigin = new URL(origin).origin;
+  } catch {
+    res.status(403).json({ error: 'CSRF token invalid (malformed origin)' });
+    return;
+  }
 
-  if (normalizedOrigin !== normalizedBase) {
+  let normalizedBase = '';
+  try {
+    normalizedBase = new URL(config.BASE_URL).origin;
+  } catch {}
+
+  const allowedOrigins = [
+    normalizedBase,
+    'https://syncwave.work.gd',
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:5173',
+  ].filter(Boolean);
+
+  const isAllowed =
+    allowedOrigins.includes(normalizedOrigin) ||
+    normalizedOrigin.endsWith('.work.gd') ||
+    normalizedOrigin.endsWith('.local');
+
+  if (!isAllowed) {
     res.status(403).json({ error: 'CSRF token missing or invalid (origin mismatch)' });
     return;
   }
