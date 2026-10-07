@@ -14,7 +14,7 @@ const createPlaylistSchema = z.object({
 const addTrackSchema = z.object({
   track: z.object({
     id: z.string(),
-    provider: z.enum(['audius', 'jamendo', 'itunes']),
+    provider: z.string(),
     providerTrackId: z.string(),
     title: z.string(),
     artist: z.string(),

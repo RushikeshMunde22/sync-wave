@@ -2,6 +2,7 @@ import { getDb } from '../db/database.js';
 import { logAudit } from './audit.service.js';
 import { randomBytes } from 'crypto';
 import { getLiveConnectedUsersCount } from '../sync/sync.handlers.js';
+import argon2 from 'argon2';
 
 export function getDashboardStats() {
   const db = getDb();
@@ -32,7 +33,7 @@ export function getDashboardStats() {
 
 export function listUsers(search: string, limit: number, offset: number) {
   const db = getDb();
-  let query = 'SELECT id, email, display_name as displayName, role, is_banned as isBanned, created_at as createdAt FROM users';
+  let query = 'SELECT id, email, display_name as displayName, role, is_banned as isBanned, password_hash as passwordHash, created_at as createdAt, last_seen_at as lastSeenAt FROM users';
   let countQuery = 'SELECT COUNT(*) as count FROM users';
   const params: any[] = [];
   
@@ -47,6 +48,16 @@ export function listUsers(search: string, limit: number, offset: number) {
   const data = db.prepare(query).all(...params, limit, offset);
   const total = (db.prepare(countQuery).get(...params) as any).count;
   return { users: data, total };
+}
+
+export async function resetUserPassword(actorId: string, userId: string, newPassword?: string) {
+  const db = getDb();
+  const pwd = newPassword || `SyncWave!${Math.floor(100000 + Math.random() * 900000)}`;
+  const hash = await argon2.hash(pwd);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+  logAudit(actorId, 'user.password_reset', userId, {});
+  return { success: true, newPassword: pwd };
 }
 
 export function getUserDetails(userId: string) {

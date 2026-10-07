@@ -15,7 +15,7 @@ export const loginSchema = z.object({
 
 export const forgotPasswordSchema = z.object({
   email: z.string().email(),
-  recoveryCode: z.string(),
+  recoveryCode: z.string().optional(),
 });
 
 export const resetPasswordSchema = z.object({

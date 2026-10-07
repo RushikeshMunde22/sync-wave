@@ -3,10 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { api } from '../lib/api';
+import { BrandLogo } from '../components/BrandLogo';
+import { PromotionalBanner } from '../components/PromotionalBanner';
+import { BrandFooter } from '../components/BrandFooter';
+import { SpotifyPlayerPanel } from '../components/SpotifyPlayerPanel';
+import { AdSenseSlot } from '../components/AdSenseSlot';
 
 interface Track {
   id: string;
-  provider: 'itunes' | 'audius' | 'jamendo';
+  provider: string;
   providerTrackId: string;
   title: string;
   artist: string;
@@ -23,6 +28,7 @@ interface GroupMeta {
   memberCount: number;
   maxMembers: number;
   theme: string;
+  mediaMode?: 'music' | 'video' | 'both';
   currentTrackTitle?: string;
   isPlaying?: boolean;
 }
@@ -55,16 +61,18 @@ export default function HomePage() {
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomCapacity, setNewRoomCapacity] = useState(50);
   const [newRoomTheme, setNewRoomTheme] = useState('default');
+  const [newRoomMediaMode, setNewRoomMediaMode] = useState<'music' | 'video' | 'both'>('music');
   const [creatingRoom, setCreatingRoom] = useState(false);
 
   // Quick join state
   const [joinCode, setJoinCode] = useState('');
   const [joinError, setJoinError] = useState('');
 
-  // Audio Preview Player
+  // Audio Playback & Spotify Panel
   const [previewTrack, setPreviewTrack] = useState<Track | null>(null);
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
-  const [previewProgress, setPreviewProgress] = useState(0);
+  const [currentPlayTimeMs, setCurrentPlayTimeMs] = useState(0);
+  const [currentDurationMs, setCurrentDurationMs] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Copy notification toast
@@ -121,7 +129,7 @@ export default function HomePage() {
     return () => clearTimeout(handler);
   }, [searchQuery]);
 
-  // Audio Preview Controls
+  // Audio Playback & Navigation Controls
   const togglePlayTrack = (track: Track) => {
     if (previewTrack?.id === track.id) {
       if (isPlayingPreview) {
@@ -136,15 +144,43 @@ export default function HomePage() {
 
     setPreviewTrack(track);
     setIsPlayingPreview(true);
+    setCurrentPlayTimeMs(0);
+    setCurrentDurationMs(track.durationMs || 0);
 
     if (audioRef.current) {
       const streamUrl = track.streamUrl || `/api/music/stream/${track.provider}/${track.providerTrackId}`;
       audioRef.current.src = streamUrl;
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch((err) => {
-        console.warn('Preview playback failed:', err);
+        console.warn('Track playback failed:', err);
         setIsPlayingPreview(false);
       });
+    }
+  };
+
+  const handleAutoPlayNext = () => {
+    if (!previewTrack || tracks.length === 0) return;
+    const currentIndex = tracks.findIndex((t) => t.id === previewTrack.id);
+    const nextTrack = tracks[(currentIndex + 1) % tracks.length];
+    if (nextTrack) {
+      togglePlayTrack(nextTrack);
+    }
+  };
+
+  const handlePlayPrev = () => {
+    if (!previewTrack || tracks.length === 0) return;
+    const currentIndex = tracks.findIndex((t) => t.id === previewTrack.id);
+    const prevIndex = (currentIndex - 1 + tracks.length) % tracks.length;
+    const prevTrack = tracks[prevIndex];
+    if (prevTrack) {
+      togglePlayTrack(prevTrack);
+    }
+  };
+
+  const handleSeek = (posMs: number) => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = posMs / 1000;
+      setCurrentPlayTimeMs(posMs);
     }
   };
 
@@ -158,10 +194,12 @@ export default function HomePage() {
         name: newRoomName.trim(),
         maxMembers: Number(newRoomCapacity),
         theme: newRoomTheme,
+        mediaMode: newRoomMediaMode,
       });
 
       setShowCreateModal(false);
       setNewRoomName('');
+      setNewRoomMediaMode('music');
       if (res.data?.id) {
         navigate(`/room/${res.data.id}`);
       } else {
@@ -202,20 +240,18 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white p-4 sm:p-6 lg:p-8 pb-32">
-      {/* Hidden audio element for preview */}
+      {/* Audio Engine element */}
       <audio
         ref={audioRef}
         onTimeUpdate={() => {
           if (audioRef.current) {
-            const current = audioRef.current.currentTime;
-            const duration = audioRef.current.duration || 30;
-            setPreviewProgress((current / duration) * 100);
+            const currentMs = audioRef.current.currentTime * 1000;
+            const durMs = (audioRef.current.duration || 0) * 1000;
+            setCurrentPlayTimeMs(currentMs);
+            if (durMs > 0) setCurrentDurationMs(durMs);
           }
         }}
-        onEnded={() => {
-          setIsPlayingPreview(false);
-          setPreviewProgress(0);
-        }}
+        onEnded={handleAutoPlayNext}
       />
 
       {/* Copy Toast Alert */}
@@ -236,11 +272,10 @@ export default function HomePage() {
         {/* Header Greeting */}
         <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-neutral-800/80 pb-6">
           <div>
-            <div className="flex items-center gap-2.5">
-              <span className="text-2xl">🌊</span>
-              <h1 className="text-3xl font-extrabold tracking-tight">SyncWave</h1>
-              <span className="text-[10px] bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded-full font-mono uppercase font-semibold">
-                Global Music
+            <div className="flex items-center gap-3">
+              <BrandLogo size="md" animated={false} />
+              <span className="text-[10px] bg-white/10 text-white/80 border border-white/20 px-2.5 py-0.5 rounded-full font-mono uppercase font-semibold tracking-wider">
+                Live Rooms
               </span>
             </div>
             <p className="text-neutral-400 text-sm mt-1">
@@ -276,6 +311,20 @@ export default function HomePage() {
             )}
           </div>
         </header>
+
+        {/* Dynamic Promotional Hero Spotlight Banner */}
+        <PromotionalBanner />
+
+        {/* Pre-Join / Pre-Create Pro-Tip Advisory Callout */}
+        <div className="bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-indigo-500/10 border border-amber-500/30 rounded-2xl p-3.5 flex items-start gap-3 shadow-lg">
+          <span className="text-xl shrink-0">💡</span>
+          <div className="text-xs">
+            <p className="font-bold text-amber-300">Pro-Tip for Full-Length Playback:</p>
+            <p className="text-neutral-300 mt-0.5 leading-relaxed">
+              If an audio song snippet is short or regionally restricted, choose <strong className="text-white">Video Only</strong> or <strong className="text-white">Music & Video</strong> mode (or search directly on YouTube) to enjoy full-length, uninterrupted music videos with all friends in real-time sync!
+            </p>
+          </div>
+        </div>
 
         {/* Action Banners (Create Room / Join Room) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -376,9 +425,20 @@ export default function HomePage() {
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <h3 className="font-bold text-base truncate max-w-[180px]">{group.name}</h3>
-                          <span className="text-[11px] text-neutral-400 flex items-center gap-1 mt-0.5">
-                            {emoji} {themeName} • {group.memberCount} / {group.maxMembers} listening
-                          </span>
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            <span className="text-[11px] text-neutral-400 flex items-center gap-1">
+                              {emoji} {themeName} • {group.memberCount} / {group.maxMembers} listening
+                            </span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              group.mediaMode === 'video'
+                                ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                                : group.mediaMode === 'both'
+                                ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            }`}>
+                              {group.mediaMode === 'video' ? '🎬 Video' : group.mediaMode === 'both' ? '🔀 Music & Video' : '🎵 Music'}
+                            </span>
+                          </div>
                         </div>
                         <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse mt-1" />
                       </div>
@@ -548,65 +608,39 @@ export default function HomePage() {
             </div>
           )}
         </section>
+
+        {/* Google AdSense Responsive Display Slot */}
+        <div className="mt-8">
+          <AdSenseSlot className="max-w-5xl mx-auto" />
+        </div>
       </div>
 
-      {/* Floating Audio Preview Player */}
-      <AnimatePresence>
-        {previewTrack && (
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 50 }}
-            className="fixed bottom-4 left-4 right-4 max-w-2xl mx-auto z-50 bg-neutral-900/95 backdrop-blur-xl border border-neutral-700/80 rounded-2xl p-3 shadow-2xl flex items-center justify-between gap-3 text-white"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <img
-                src={previewTrack.artworkUrl || 'https://picsum.photos/60'}
-                alt={previewTrack.title}
-                className="w-11 h-11 rounded-xl object-cover bg-neutral-800 flex-shrink-0"
-              />
-              <div className="min-w-0">
-                <p className="text-xs font-bold truncate">{previewTrack.title}</p>
-                <p className="text-[11px] text-neutral-400 truncate">{previewTrack.artist}</p>
-              </div>
-            </div>
+      {/* Spotify-Style Studio Player Panel & Synced Lyrics */}
+      {previewTrack && (
+        <SpotifyPlayerPanel
+          track={previewTrack}
+          isPlaying={isPlayingPreview}
+          currentTimeMs={currentPlayTimeMs}
+          durationMs={currentDurationMs || previewTrack.durationMs}
+          onPlayPause={() => togglePlayTrack(previewTrack)}
+          onSeek={handleSeek}
+          onNext={handleAutoPlayNext}
+          onPrev={handlePlayPrev}
+          onClose={() => {
+            if (audioRef.current) {
+              audioRef.current.pause();
+              audioRef.current.src = '';
+            }
+            setIsPlayingPreview(false);
+            setPreviewTrack(null);
+          }}
+        />
+      )}
 
-            {/* Scrubber indicator */}
-            <div className="hidden sm:block flex-1 mx-4">
-              <div className="w-full bg-neutral-800 h-1.5 rounded-full overflow-hidden">
-                <div
-                  className="bg-indigo-500 h-full rounded-full transition-all duration-100"
-                  style={{ width: `${previewProgress}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => togglePlayTrack(previewTrack)}
-                className="w-9 h-9 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-sm shadow transition-colors"
-              >
-                {isPlayingPreview ? '⏸' : '▶'}
-              </button>
-
-              <button
-                onClick={() => {
-                  if (audioRef.current) {
-                    audioRef.current.pause();
-                    audioRef.current.src = '';
-                  }
-                  setIsPlayingPreview(false);
-                  setPreviewTrack(null);
-                }}
-                className="text-neutral-500 hover:text-white text-xs p-1"
-                title="Close Player"
-              >
-                ✕
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Global Brand Footer */}
+      <div className="-mx-4 sm:-mx-6 lg:-mx-8">
+        <BrandFooter />
+      </div>
 
       {/* Create Room Modal */}
       <AnimatePresence>
@@ -666,6 +700,43 @@ export default function HomePage() {
                     <span>2 (Intimate duo)</span>
                     <span>50 (Party)</span>
                     <span>100 (Full Arena)</span>
+                  </div>
+                </div>
+
+                {/* Media Playback Mode Selection */}
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-300 mb-2">Room Media Mode</label>
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {[
+                      { id: 'music', label: 'Music Only', icon: '🎵', desc: 'HQ audio & lyrics sync' },
+                      { id: 'video', label: 'Video Only', icon: '🎬', desc: 'YouTube watch party' },
+                      { id: 'both', label: 'Music & Video', icon: '🔀', desc: 'Both songs & videos' },
+                    ].map((mode) => {
+                      const isSelected = newRoomMediaMode === mode.id;
+                      return (
+                        <div
+                          key={mode.id}
+                          onClick={() => setNewRoomMediaMode(mode.id as any)}
+                          className={`p-3 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between ${
+                            isSelected
+                              ? 'bg-indigo-600/20 border-indigo-500 shadow-md shadow-indigo-600/20 ring-1 ring-indigo-500'
+                              : 'bg-neutral-950 border-neutral-800 hover:border-neutral-700'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="text-base">{mode.icon}</span>
+                            <span className="text-xs font-bold leading-tight">{mode.label}</span>
+                          </div>
+                          <p className="text-[10px] text-neutral-400 leading-tight">{mode.desc}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-2.5 bg-amber-500/10 border border-amber-500/25 rounded-xl p-3 flex items-start gap-2.5">
+                    <span className="text-sm shrink-0">💡</span>
+                    <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                      <strong>Full-Song Guarantee:</strong> If audio tracks are regional snippets, select <strong>Video Only</strong> or <strong>Music & Video</strong> to stream complete YouTube music videos in real-time sync with friends!
+                    </p>
                   </div>
                 </div>
 

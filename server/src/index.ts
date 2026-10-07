@@ -6,6 +6,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { config } from './config.js';
 import { initializeDatabase, closeDb } from './db/database.js';
@@ -18,6 +19,8 @@ import { musicRouter } from './music/music.routes.js';
 import { adminRouter } from './admin/admin.routes.js';
 import { feedbackRouter } from './feedback/feedback.routes.js';
 import { playlistRouter } from './playlists/playlist.routes.js';
+import { promotionsRouter } from './promotions/promotions.routes.js';
+import { youtubeRouter } from './music/youtube.routes.js';
 import { setupSocketHandlers } from './sync/sync.handlers.js';
 import { sessionMiddleware, csrfProtection } from './auth/auth.middleware.js';
 
@@ -49,10 +52,32 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
+      scriptSrc: [
+        "'self'", 
+        "'unsafe-inline'", 
+        "'unsafe-eval'",
+        'https://www.youtube.com', 
+        'https://s.ytimg.com',
+        'https://pagead2.googlesyndication.com',
+        'https://partner.googleadservices.com',
+        'https://tpc.googlesyndication.com',
+        'https://www.googletagservices.com'
+      ],
       styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-      imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
+      imgSrc: [
+        "'self'", 
+        'data:', 
+        'https:', 
+        'blob:', 
+        'https://i.ytimg.com', 
+        'https://*.ytimg.com',
+        'https://pagead2.googlesyndication.com',
+        'https://googleads.g.doubleclick.net',
+        'https://*.doubleclick.net',
+        'https://*.google.com',
+        'https://*.googlesyndication.com'
+      ],
       mediaSrc: ["'self'", 'https:', 'blob:', 'data:'],
       connectSrc: [
         "'self'", 
@@ -67,9 +92,20 @@ app.use(helmet({
         'https://*.jiosaavn.com',
         'https://*.saavn.com',
         'https://*.saavncdn.com',
-        'https://hls-server.vercel.app'
+        'https://hls-server.vercel.app',
+        'https://pagead2.googlesyndication.com',
+        'https://googleads.g.doubleclick.net',
+        'https://tpc.googlesyndication.com'
       ],
-      frameSrc: ["'none'"],
+      frameSrc: [
+        "'self'", 
+        'https://www.youtube.com', 
+        'https://www.youtube-nocookie.com',
+        'https://googleads.g.doubleclick.net',
+        'https://tpc.googlesyndication.com',
+        'https://www.google.com',
+        'https://pagead2.googlesyndication.com'
+      ],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
@@ -125,6 +161,8 @@ app.use('/api/music', musicRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/feedback', feedbackRouter);
 app.use('/api/playlists', playlistRouter);
+app.use('/api/promotions', promotionsRouter);
+app.use('/api/youtube', youtubeRouter);
 
 // ── Socket.IO ────────────────────────────────────────────
 const io = new SocketIOServer(httpServer, {
@@ -140,10 +178,24 @@ const io = new SocketIOServer(httpServer, {
   pingTimeout: 20000,
   pingInterval: 25000,
 });
+app.set('io', io);
 
 // Socket.IO handlers are attached in start() after DB initialization and migrations
 
-// ── Serve static files (client build) ────────────────────
+// ── Google AdSense ads.txt verification route ────────────
+app.get('/ads.txt', (_req, res) => {
+  const adsTxtPath = path.resolve(__dirname, '../../client/public/ads.txt');
+  if (fs.existsSync(adsTxtPath)) {
+    res.type('text/plain').sendFile(adsTxtPath);
+  } else {
+    res.type('text/plain').send('google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0\n');
+  }
+});
+
+// ── Serve static files (client build & ads) ──────────────
+const clientAdsPath = path.resolve(__dirname, '../../client/public/ads');
+app.use('/ads', express.static(clientAdsPath));
+
 const clientDistPath = path.resolve(__dirname, '../../client/dist');
 app.use(express.static(clientDistPath, {
   maxAge: config.NODE_ENV === 'production' ? '1d' : 0,

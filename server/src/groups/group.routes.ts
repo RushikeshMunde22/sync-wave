@@ -9,8 +9,8 @@ const router = Router();
 // Create group
 router.post('/', requireAuth, async (req, res, next) => {
   try {
-    const { name, maxMembers, theme } = createGroupSchema.parse(req.body);
-    const group = await GroupService.createGroup(req.user!.id, name, { maxMembers, theme });
+    const { name, maxMembers, theme, mediaMode } = createGroupSchema.parse(req.body);
+    const group = await GroupService.createGroup(req.user!.id, name, { maxMembers, theme, mediaMode });
     res.status(201).json(group);
   } catch (error) {
     next(error);
@@ -140,6 +140,14 @@ router.post('/:id/members/action', requireAuth, requireGroupMember, async (req, 
         await GroupService.transferOwnership(actorId, targetId, groupId);
         break;
     }
+
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        const updatedMembers = await GroupService.getGroupMembers(groupId);
+        io.to(groupId).emit('room:members-updated', { members: updatedMembers, action, targetId });
+      }
+    } catch (e) {}
 
     res.status(200).json({ message: `Member ${action}d successfully` });
   } catch (error) {

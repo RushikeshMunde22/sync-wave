@@ -16,6 +16,7 @@ data/
 dist/
 server/dist/
 client/dist/
+*.tsbuildinfo
 
 # IDE
 .vscode/

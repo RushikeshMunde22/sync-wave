@@ -12,6 +12,7 @@ export interface Group {
   membersCanControl: boolean;
   maxMembers: number;
   theme: string;
+  mediaMode: 'music' | 'video' | 'both';
   isClosed: boolean;
   createdAt: string;
 }
@@ -54,19 +55,20 @@ export const generateInviteCode = (): string => {
 export const createGroup = async (
   ownerId: string, 
   name: string, 
-  options?: { maxMembers?: number; theme?: string }
+  options?: { maxMembers?: number; theme?: string; mediaMode?: 'music' | 'video' | 'both' }
 ): Promise<Group> => {
   const db = getDb();
   const groupId = uuidv4();
   const inviteCode = generateInviteCode();
   const maxMembers = options?.maxMembers || 50;
   const theme = options?.theme || 'default';
+  const mediaMode = options?.mediaMode || 'music';
   
   db.transaction(() => {
     db.prepare(`
-      INSERT INTO groups (id, name, owner_id, invite_code, invite_revoked, members_can_control, max_members, theme, is_closed) 
-      VALUES (?, ?, ?, ?, 0, 0, ?, ?, 0)
-    `).run(groupId, name, ownerId, inviteCode, maxMembers, theme);
+      INSERT INTO groups (id, name, owner_id, invite_code, invite_revoked, members_can_control, max_members, theme, is_closed, media_mode) 
+      VALUES (?, ?, ?, ?, 0, 0, ?, ?, 0, ?)
+    `).run(groupId, name, ownerId, inviteCode, maxMembers, theme, mediaMode);
 
     db.prepare(`
       INSERT INTO group_members (group_id, user_id, role)
@@ -80,6 +82,10 @@ export const createGroup = async (
   })();
 
   const row = db.prepare('SELECT * FROM groups WHERE id = ?').get(groupId);
+  try {
+    const { getSyncEngine } = await import('../sync/sync.handlers.js');
+    getSyncEngine()?.scheduleEmptyRoomDeletion(groupId);
+  } catch (e) {}
   return mapGroupDbToModel(row);
 };
 
@@ -320,7 +326,7 @@ export const revokeInviteCode = async (actorId: string, groupId: string): Promis
 export const updateGroupSettings = async (
   actorId: string, 
   groupId: string, 
-  settings: Partial<Pick<Group, 'name' | 'membersCanControl' | 'maxMembers'>>
+  settings: Partial<Pick<Group, 'name' | 'membersCanControl' | 'maxMembers' | 'mediaMode'>>
 ): Promise<void> => {
   const db = getDb();
   const actorRole = await getMemberRole(actorId, groupId);
@@ -340,6 +346,10 @@ export const updateGroupSettings = async (
   if (settings.maxMembers !== undefined) {
     updates.push('max_members = ?');
     values.push(settings.maxMembers);
+  }
+  if (settings.mediaMode !== undefined) {
+    updates.push('media_mode = ?');
+    values.push(settings.mediaMode);
   }
 
   if (updates.length > 0) {
@@ -361,6 +371,11 @@ export const deleteGroup = async (actorId: string, groupId: string): Promise<voi
   const actorRole = await getMemberRole(actorId, groupId);
   if (actorRole !== 'owner') throw new Error('Unauthorized');
 
+  db.prepare('DELETE FROM groups WHERE id = ?').run(groupId);
+};
+
+export const autoDeleteEmptyGroup = async (groupId: string): Promise<void> => {
+  const db = getDb();
   db.prepare('DELETE FROM groups WHERE id = ?').run(groupId);
 };
 
@@ -464,6 +479,17 @@ export const importPlaylistToQueue = async (actorId: string, groupId: string, pl
     }
   })();
 
+  try {
+    const { getSyncEngine } = await import('../sync/sync.handlers.js');
+    const syncEngine = getSyncEngine();
+    if (syncEngine) {
+      await syncEngine.reloadQueue(groupId);
+      await syncEngine.autoPlayIfQuiet(groupId);
+    }
+  } catch (err) {
+    console.error('Error notifying sync engine about playlist import:', err);
+  }
+
   return tracks.length;
 };
 
@@ -478,6 +504,7 @@ function mapGroupDbToModel(row: any): Group {
     membersCanControl: Boolean(row.members_can_control),
     maxMembers: Number(row.max_members) || 50,
     theme: row.theme || 'default',
+    mediaMode: (row.media_mode as 'music' | 'video' | 'both') || 'music',
     isClosed: Boolean(row.is_closed),
     createdAt: row.created_at
   };

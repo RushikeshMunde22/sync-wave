@@ -6,6 +6,7 @@ import { useSocketStore } from './stores/socketStore';
 import LoginPage from './pages/auth/LoginPage';
 import SignupPage from './pages/auth/SignupPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
+import LandingPage from './pages/LandingPage';
 import HomePage from './pages/HomePage';
 import DiscoverPage from './pages/DiscoverPage';
 import RoomPage from './pages/RoomPage';
@@ -22,13 +23,53 @@ import AdminModeration from './pages/admin/AdminModeration';
 import AdminSecurity from './pages/admin/AdminSecurity';
 import AdminSystem from './pages/admin/AdminSystem';
 import AdminFeedback from './pages/admin/AdminFeedback';
+import AdminPromotions from './pages/admin/AdminPromotions';
 import JoinGroupPage from './pages/JoinGroupPage';
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
+import TermsPage from './pages/TermsPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthStore();
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-neutral-950 text-white">Loading...</div>;
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#050811] text-cyan-400">
+        <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <Layout>{children}</Layout>;
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated, isLoading } = useAuthStore();
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#050811] text-cyan-400 gap-3">
+        <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+        <span className="text-xs font-mono tracking-widest uppercase">Verifying Admin Access...</span>
+      </div>
+    );
+  }
+  if (!isAuthenticated || !user || user.role !== 'superadmin') {
+    return <Navigate to="/login?redirect=/admin" replace />;
+  }
+  return <>{children}</>;
+}
+
+function HomeRoute() {
+  const { isAuthenticated, isLoading } = useAuthStore();
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#050811] text-cyan-400">
+        <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+  if (!isAuthenticated) {
+    return <LandingPage />;
+  }
+  return <Layout><HomePage /></Layout>;
 }
 
 export default function App() {
@@ -50,15 +91,27 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/" element={<HomeRoute />} />
+        <Route path="/landing" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/privacy" element={<PrivacyPolicyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
         
-        {/* Admin Routes */}
-        <Route path="/admin" element={<AdminLayout />}>
+        {/* Admin Routes strictly guarded against URL manipulation */}
+        <Route
+          path="/admin"
+          element={
+            <AdminRoute>
+              <AdminLayout />
+            </AdminRoute>
+          }
+        >
           <Route index element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="dashboard" element={<AdminDashboard />} />
           <Route path="feedback" element={<AdminFeedback />} />
+          <Route path="promotions" element={<AdminPromotions />} />
           <Route path="users" element={<AdminUsers />} />
           <Route path="groups" element={<AdminGroups />} />
           <Route path="moderation" element={<AdminModeration />} />
@@ -66,7 +119,6 @@ export default function App() {
           <Route path="system" element={<AdminSystem />} />
         </Route>
 
-        <Route path="/" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
         <Route path="/discover" element={<ProtectedRoute><DiscoverPage /></ProtectedRoute>} />
         <Route path="/room/:id" element={<ProtectedRoute><RoomPage /></ProtectedRoute>} />
         <Route path="/room/:id/settings" element={<ProtectedRoute><GroupSettingsPage /></ProtectedRoute>} />

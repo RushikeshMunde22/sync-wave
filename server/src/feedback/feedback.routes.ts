@@ -10,6 +10,8 @@ const feedbackSchema = z.object({
   content: z.string().min(5, 'Feedback must be at least 5 characters').max(3000, 'Feedback cannot exceed 3000 characters'),
 });
 
+import { sendFeedbackEmailToOwner } from '../mail/mail.service.js';
+
 // Submit feedback (authenticated or guest with session)
 router.post('/', requireAuth, async (req, res) => {
   try {
@@ -24,7 +26,17 @@ router.post('/', requireAuth, async (req, res) => {
     `).run(id, user.id, user.email, content);
 
     console.log(`[Feedback] Received feedback from ${user.email} (${id})`);
-    res.status(201).json({ success: true, message: 'Thank you for your feedback!' });
+
+    // Dispatch email to owner in background
+    sendFeedbackEmailToOwner({
+      userEmail: user.email,
+      userName: user.displayName,
+      content,
+    }).catch(err => {
+      console.error('[Feedback] Background email dispatch failed:', err);
+    });
+
+    res.status(201).json({ success: true, message: 'Thank you for your feedback! It has been dispatched to the owner.' });
   } catch (err: any) {
     res.status(400).json({ error: err.message || 'Failed to submit feedback' });
   }

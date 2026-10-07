@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
+import { BrandLogo } from '../../components/BrandLogo';
 
 export default function ForgotPasswordPage() {
   const [activeTab, setActiveTab] = useState<'email' | 'code'>('email');
@@ -47,7 +48,7 @@ export default function ForgotPasswordPage() {
       }
 
       setSuccessMessage(
-        'Password sent! If an account exists for this email, a new temporary password has been delivered to your inbox. Check your email and use it to log in.'
+        'Password sent! If an account exists for this email, a new temporary password has been dispatched directly to your inbox. Check your email and use it to log in.'
       );
     } catch (err: any) {
       setError(formatErr(err, 'Something went wrong. Please try again.'));
@@ -84,25 +85,38 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[#03050a] flex flex-col items-center justify-center p-4 relative overflow-hidden text-white selection:bg-white/20 selection:text-white">
+      {/* Ambient background lighting */}
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-white/[0.03] blur-[140px] rounded-full pointer-events-none -z-10" />
+
+      {/* Brand logo header */}
+      <Link to="/" className="mb-8 flex items-center group">
+        <BrandLogo size="lg" animated={false} />
+      </Link>
+
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md bg-neutral-900 rounded-3xl p-8 shadow-2xl border border-neutral-800"
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full max-w-md bg-gradient-to-b from-[#0a0f1d]/90 to-[#04060d]/90 rounded-3xl p-8 shadow-[0_20px_50px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.15)] border border-white/10 backdrop-blur-2xl relative z-10"
       >
         <div className="text-center mb-6">
-          <span className="text-4xl">🔐</span>
-          <h1 className="text-2xl font-bold text-white mt-2">Password Recovery</h1>
+          <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 text-white flex items-center justify-center text-2xl mx-auto mb-3 shadow-inner">
+            🔐
+          </div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Password Recovery</h1>
           <p className="text-xs text-neutral-400 mt-1">Get back into your SyncWave account</p>
         </div>
 
         {/* Tab switch */}
-        <div className="grid grid-cols-2 gap-2 p-1 bg-neutral-950 rounded-xl mb-6 border border-neutral-800 text-xs font-semibold">
+        <div className="grid grid-cols-2 gap-2 p-1.5 bg-black/50 rounded-2xl mb-6 border border-white/10 text-xs font-semibold">
           <button
             type="button"
             onClick={() => { setActiveTab('email'); setError(''); setSuccessMessage(''); }}
-            className={`py-2 rounded-lg transition-colors ${
-              activeTab === 'email' ? 'bg-indigo-600 text-white shadow' : 'text-neutral-400 hover:text-white'
+            className={`py-2.5 rounded-xl transition-all ${
+              activeTab === 'email' 
+                ? 'bg-white text-[#03050a] font-bold shadow-lg shadow-white/20' 
+                : 'text-neutral-400 hover:text-white'
             }`}
           >
             ✉️ Email Me Password
@@ -110,8 +124,10 @@ export default function ForgotPasswordPage() {
           <button
             type="button"
             onClick={() => { setActiveTab('code'); setError(''); setSuccessMessage(''); }}
-            className={`py-2 rounded-lg transition-colors ${
-              activeTab === 'code' ? 'bg-indigo-600 text-white shadow' : 'text-neutral-400 hover:text-white'
+            className={`py-2.5 rounded-xl transition-all ${
+              activeTab === 'code' 
+                ? 'bg-white text-[#03050a] font-bold shadow-lg shadow-white/20' 
+                : 'text-neutral-400 hover:text-white'
             }`}
           >
             🔑 Use Recovery Code
@@ -124,7 +140,7 @@ export default function ForgotPasswordPage() {
           </div>
         )}
         {successMessage && (
-          <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-3 rounded-xl mb-4 text-xs font-medium leading-relaxed">
+          <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-3.5 rounded-xl mb-4 text-xs font-medium leading-relaxed">
             {successMessage}
           </div>
         )}
@@ -132,12 +148,14 @@ export default function ForgotPasswordPage() {
         {activeTab === 'email' ? (
           <form onSubmit={handleEmailRecovery} className="space-y-4">
             <div>
-              <label className="block text-neutral-400 text-xs mb-1 font-medium">Registered Email Address</label>
+              <label className="block text-neutral-400 text-xs mb-1 font-semibold uppercase tracking-wider">
+                Registered Email Address
+              </label>
               <input
                 type="email"
                 required
                 placeholder="you@example.com"
-                className="w-full bg-neutral-950 text-white rounded-xl px-4 py-3 border border-neutral-800 focus:border-indigo-500 outline-none text-sm transition-colors"
+                className="w-full bg-black/40 text-white rounded-xl px-4 py-3 border border-white/10 focus:border-white/30 outline-none text-sm transition-colors shadow-inner"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
@@ -149,42 +167,49 @@ export default function ForgotPasswordPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl py-3 font-semibold text-sm transition-colors shadow-lg shadow-indigo-600/20 disabled:opacity-50 mt-2"
+              className="w-full bg-white hover:bg-neutral-100 text-[#03050a] font-bold rounded-xl py-3.5 text-sm transition-all shadow-[0_0_25px_rgba(255,255,255,0.25)] hover:shadow-[0_0_35px_rgba(255,255,255,0.4)] disabled:opacity-50 mt-2"
             >
-              {isLoading ? 'Sending Password...' : 'Send Password to My Email'}
+              {isLoading ? 'Dispatching Password...' : 'Send Password to My Email'}
             </button>
           </form>
         ) : (
           <form onSubmit={handleCodeReset} className="space-y-4">
             <div>
-              <label className="block text-neutral-400 text-xs mb-1 font-medium">Email Address</label>
+              <label className="block text-neutral-400 text-xs mb-1 font-semibold uppercase tracking-wider">
+                Email Address
+              </label>
               <input
                 type="email"
                 required
                 placeholder="you@example.com"
-                className="w-full bg-neutral-950 text-white rounded-xl px-4 py-2.5 border border-neutral-800 focus:border-indigo-500 outline-none text-sm"
+                className="w-full bg-black/40 text-white rounded-xl px-4 py-3 border border-white/10 focus:border-white/30 outline-none text-sm transition-colors shadow-inner"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
             <div>
-              <label className="block text-neutral-400 text-xs mb-1 font-medium">12-Character Recovery Code</label>
+              <label className="block text-neutral-400 text-xs mb-1 font-semibold uppercase tracking-wider">
+                12-Character Recovery Code
+              </label>
               <input
                 type="text"
                 required
                 placeholder="e.g. 4a8b9c1d2e3f"
-                className="w-full bg-neutral-950 text-white rounded-xl px-4 py-2.5 border border-neutral-800 focus:border-indigo-500 outline-none text-sm font-mono tracking-wider"
+                className="w-full bg-black/40 text-white rounded-xl px-4 py-3 border border-white/10 focus:border-white/30 outline-none text-sm font-mono tracking-wider transition-colors shadow-inner"
                 value={recoveryCode}
                 onChange={(e) => setRecoveryCode(e.target.value)}
               />
             </div>
             <div>
-              <label className="block text-neutral-400 text-xs mb-1 font-medium">New Password</label>
+              <label className="block text-neutral-400 text-xs mb-1 font-semibold uppercase tracking-wider">
+                New Password
+              </label>
               <input
                 type="password"
                 required
+                minLength={10}
                 placeholder="At least 10 characters"
-                className="w-full bg-neutral-950 text-white rounded-xl px-4 py-2.5 border border-neutral-800 focus:border-indigo-500 outline-none text-sm"
+                className="w-full bg-black/40 text-white rounded-xl px-4 py-3 border border-white/10 focus:border-white/30 outline-none text-sm transition-colors shadow-inner"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
               />
@@ -193,7 +218,7 @@ export default function ForgotPasswordPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl py-3 font-semibold text-sm transition-colors shadow-lg disabled:opacity-50 mt-2"
+              className="w-full bg-white hover:bg-neutral-100 text-[#03050a] font-bold rounded-xl py-3.5 text-sm transition-all shadow-[0_0_25px_rgba(255,255,255,0.25)] hover:shadow-[0_0_35px_rgba(255,255,255,0.4)] disabled:opacity-50 mt-2"
             >
               {isLoading ? 'Resetting Password...' : 'Reset Password'}
             </button>
@@ -202,7 +227,7 @@ export default function ForgotPasswordPage() {
 
         <div className="mt-6 text-center text-xs text-neutral-400">
           Remember your password?{' '}
-          <Link to="/login" className="text-indigo-400 hover:text-indigo-300 font-medium">
+          <Link to="/login" className="text-white hover:underline font-semibold transition-colors">
             Log in
           </Link>
         </div>

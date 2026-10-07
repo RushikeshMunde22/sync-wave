@@ -155,3 +155,65 @@ export async function sendWelcomeEmail(toEmail: string, displayName: string): Pr
     return false;
   }
 }
+
+export async function sendFeedbackEmailToOwner({
+  userEmail,
+  userName,
+  content,
+}: {
+  userEmail: string;
+  userName?: string;
+  content: string;
+}): Promise<boolean> {
+  const mailer = getTransporter();
+  const ownerEmail = 'munderushikesh66@gmail.com';
+  const subject = `[SyncWave User Feedback] from ${userName || userEmail}`;
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #09090b; color: #ffffff; padding: 32px; border-radius: 16px; border: 1px solid #27272a;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <h1 style="color: #6366f1; margin: 0; font-size: 26px;">💬 New User Feedback Received</h1>
+        <p style="color: #a1a1aa; font-size: 14px; margin-top: 4px;">SyncWave Real-Time Feedback System</p>
+      </div>
+
+      <div style="background-color: #18181b; padding: 24px; border-radius: 12px; border: 1px solid #27272a;">
+        <div style="margin-bottom: 16px; border-bottom: 1px solid #27272a; padding-bottom: 12px;">
+          <p style="margin: 0; color: #a1a1aa; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">Submitted By</p>
+          <p style="margin: 4px 0 0 0; color: #f4f4f5; font-size: 16px; font-weight: 600;">${userName || 'SyncWave User'} &lt;${userEmail}&gt;</p>
+        </div>
+
+        <div>
+          <p style="margin: 0 0 8px 0; color: #a1a1aa; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">Feedback Message</p>
+          <div style="background-color: #09090b; padding: 16px; border-radius: 8px; color: #e4e4e7; font-size: 15px; line-height: 1.6; white-space: pre-wrap; border-left: 4px solid #6366f1;">
+${content}
+          </div>
+        </div>
+      </div>
+
+      <div style="text-align: center; margin-top: 24px; color: #71717a; font-size: 12px;">
+        <p>Received at ${new Date().toLocaleString()} • SyncWave Production Engine</p>
+      </div>
+    </div>
+  `;
+
+  if (!mailer) {
+    console.log(`[Mail Mock] Feedback email to: ${ownerEmail} from: ${userEmail}`);
+    return true;
+  }
+
+  try {
+    await mailer.sendMail({
+      from: `"SyncWave Feedback" <${config.EMAIL_USER}>`,
+      to: ownerEmail,
+      replyTo: userEmail,
+      subject,
+      html,
+      text: `SyncWave Feedback from ${userName || userEmail} (${userEmail}):\n\n${content}`,
+    });
+    console.log('[Mail] Feedback email successfully sent to owner:', ownerEmail);
+    return true;
+  } catch (err) {
+    console.error('[Mail] Failed to send feedback email to owner:', err);
+    return false;
+  }
+}
+

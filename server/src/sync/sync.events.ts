@@ -15,6 +15,9 @@ export interface ClientToServerEvents {
   'reaction:send': (data: { groupId: string; emoji: string }) => void;
   'skipvote:cast': (data: { groupId: string }) => void;
   'presence:update': (data: { groupId: string; status: 'listening' | 'paused' | 'buffering' }) => void;
+  'song-request:submit': (data: { groupId: string; trackId: string }) => void;
+  'song-request:approve': (data: { groupId: string; requestId: string; action: 'play-now' | 'queue' }) => void;
+  'song-request:reject': (data: { groupId: string; requestId: string }) => void;
 }
 
 export interface ServerToClientEvents {
@@ -29,6 +32,8 @@ export interface ServerToClientEvents {
   'skipvote:updated': (data: { votesNeeded: number; currentVotes: number; voters: string[] }) => void;
   'skipvote:passed': () => void;
   'presence:updated': (data: { userId: string; status: 'listening' | 'paused' | 'buffering' }) => void;
+  'song-requests:updated': (data: { requests: SongRequest[] }) => void;
+  'room:deleted': (data: { groupId: string; reason: string }) => void;
   'error': (data: { message: string; code?: string }) => void;
 }
 
@@ -40,6 +45,8 @@ export interface PlaybackState {
   version: number;
   controlledBy: string | null;
   track?: TrackInfo;
+  mediaType?: 'audio' | 'video';
+  videoId?: string;
 }
 
 export interface TrackInfo {
@@ -51,6 +58,8 @@ export interface TrackInfo {
   streamUrl?: string;
   addedBy?: string;
   attribution?: string;
+  mediaType?: 'audio' | 'video';
+  videoId?: string;
 }
 
 export interface MemberPresence {
@@ -62,16 +71,33 @@ export interface MemberPresence {
   status: 'listening' | 'paused' | 'buffering';
 }
 
+export interface SongRequest {
+  id: string;
+  groupId: string;
+  trackId: string;
+  title: string;
+  artist: string;
+  artworkUrl?: string;
+  durationMs: number;
+  mediaType?: 'audio' | 'video';
+  videoId?: string;
+  requestedBy: string;
+  requestedByName: string;
+  createdAt: number;
+}
+
 export interface RoomState {
   groupId: string;
   groupName: string;
   inviteCode?: string;
   theme?: string;
+  mediaMode?: 'music' | 'video' | 'both';
   playback: PlaybackState;
   queue: QueueItem[];
   members: MemberPresence[];
   membersCanControl: boolean;
   myRole: string;
+  songRequests?: SongRequest[];
 }
 
 export interface QueueItem {

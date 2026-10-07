@@ -4,6 +4,7 @@ export const createGroupSchema = z.object({
   name: z.string().min(1).max(50).trim(),
   maxMembers: z.number().int().min(2).max(100).default(50).optional(),
   theme: z.enum(['default', 'blossom', 'blizzard', 'sunset', 'cyberwave', 'lofi']).default('default').optional(),
+  mediaMode: z.enum(['music', 'video', 'both']).default('music').optional(),
 });
 
 export const joinGroupSchema = z.object({
@@ -15,6 +16,7 @@ export const updateGroupSchema = z.object({
   membersCanControl: z.boolean().optional(),
   maxMembers: z.number().int().min(2).max(100).optional(),
   theme: z.enum(['default', 'blossom', 'blizzard', 'sunset', 'cyberwave', 'lofi']).optional(),
+  mediaMode: z.enum(['music', 'video', 'both']).optional(),
 });
 
 export const memberActionSchema = z.object({

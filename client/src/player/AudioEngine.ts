@@ -7,6 +7,8 @@ export interface PlaybackStatePayload {
   serverTimeMs: number;
   version: number;
   controlledBy: string | null;
+  mediaType?: 'audio' | 'video';
+  videoId?: string;
   track?: {
     id: string;
     title: string;
@@ -14,6 +16,8 @@ export interface PlaybackStatePayload {
     artworkUrl?: string;
     durationMs: number;
     streamUrl?: string;
+    mediaType?: 'audio' | 'video';
+    videoId?: string;
   };
 }
 
@@ -38,6 +42,8 @@ export class AudioEngine {
   private isLocallyPaused: boolean = false;
   private autoplayBlocked: boolean = false;
   private callbacks: AudioEngineCallbacks = {};
+  private keepAliveCtx: AudioContext | null = null;
+  private keepAliveOsc: OscillatorNode | null = null;
 
   private constructor() {
     this.audio = new Audio();
@@ -50,6 +56,54 @@ export class AudioEngine {
     (this.audio as any).webkitPreservesPitch = true;
 
     this.attachEventListeners();
+    this.setupBackgroundWakeHandler();
+  }
+
+  private setupBackgroundWakeHandler(): void {
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && this.lastPlaybackState?.isPlaying && !this.isLocallyPaused) {
+          if (this.audio.paused) {
+            this.playAudio();
+          }
+          if (this.keepAliveCtx?.state === 'suspended') {
+            this.keepAliveCtx.resume().catch(() => {});
+          }
+        }
+      });
+    }
+  }
+
+  private startKeepAlive(): void {
+    try {
+      if (!this.keepAliveCtx) {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioCtx) return;
+        this.keepAliveCtx = new AudioCtx();
+      }
+      if (this.keepAliveCtx.state === 'suspended') {
+        this.keepAliveCtx.resume().catch(() => {});
+      }
+      if (!this.keepAliveOsc) {
+        const osc = this.keepAliveCtx.createOscillator();
+        const gain = this.keepAliveCtx.createGain();
+        gain.gain.value = 0.00001; // inaudible keep-alive signal
+        osc.connect(gain);
+        gain.connect(this.keepAliveCtx.destination);
+        osc.start();
+        this.keepAliveOsc = osc;
+      }
+    } catch {}
+  }
+
+  private stopKeepAlive(): void {
+    try {
+      if (this.keepAliveOsc) {
+        this.keepAliveOsc.stop();
+        this.keepAliveOsc.disconnect();
+        this.keepAliveOsc = null;
+      }
+    } catch {}
   }
 
   public static getInstance(): AudioEngine {
@@ -136,7 +190,30 @@ export class AudioEngine {
     });
 
     this.audio.addEventListener('error', () => {
+      // If stopped, unloaded, or no active track, ignore benign empty-src clearing
+      if (!this.currentTrackId || !this.currentStreamUrl) {
+        return;
+      }
       const err = this.audio.error;
+      // Code 4: MEDIA_ELEMENT_ERROR: Empty src attribute
+      if (err?.code === 4 && (!this.audio.src || this.audio.src === window.location.href || this.audio.src === '')) {
+        return;
+      }
+
+      // If direct stream URL failed, retry via server proxy endpoint
+      if (this.currentStreamUrl && !this.currentStreamUrl.includes('/api/music/stream/') && this.currentTrackId?.includes(':')) {
+        const [prov, ...r] = this.currentTrackId.split(':');
+        const fallbackUrl = `/api/music/stream/${prov}/${r.join(':')}`;
+        console.warn('[AudioEngine] Direct stream failed, falling back to server stream proxy:', fallbackUrl);
+        this.currentStreamUrl = fallbackUrl;
+        this.audio.src = fallbackUrl;
+        this.audio.load();
+        if (this.lastPlaybackState?.isPlaying && !this.isLocallyPaused) {
+          this.audio.play().catch(() => {});
+        }
+        return;
+      }
+
       const msg = err ? `Audio playback error (code ${err.code}): ${err.message}` : 'Unknown audio error';
       console.error('[AudioEngine]', msg);
       this.callbacks.onError?.(msg);
@@ -173,7 +250,20 @@ export class AudioEngine {
       return;
     }
 
-    const streamUrl = track.streamUrl;
+    // If mediaType is video, let YouTubeSyncPlayer handle playback
+    if (state.mediaType === 'video' || track.mediaType === 'video') {
+      this.stop();
+      this.currentTrackId = state.trackId;
+      this.currentStreamUrl = null;
+      return;
+    }
+
+    let streamUrl = track.streamUrl;
+    if (!streamUrl && state.trackId.includes(':')) {
+      const [prov, ...r] = state.trackId.split(':');
+      streamUrl = `/api/music/stream/${prov}/${r.join(':')}`;
+    }
+
     const isNewTrack = this.currentTrackId !== state.trackId || this.currentStreamUrl !== streamUrl;
 
     if (isNewTrack && streamUrl) {
@@ -213,6 +303,7 @@ export class AudioEngine {
       // Room is paused
       this.stopDriftLoop();
       this.audio.pause();
+      this.stopKeepAlive();
       this.audio.playbackRate = 1.0;
       this.audio.currentTime = Math.max(0, state.positionMs / 1000);
       return;
@@ -230,6 +321,7 @@ export class AudioEngine {
 
   private playAudio(): void {
     if (this.audio.paused) {
+      this.startKeepAlive();
       const playPromise = this.audio.play();
       if (playPromise !== undefined) {
         playPromise.catch((error) => {
@@ -311,9 +403,15 @@ export class AudioEngine {
 
   public stop(): void {
     this.stopDriftLoop();
+    this.stopKeepAlive();
     this.audio.pause();
     this.audio.currentTime = 0;
-    this.audio.src = '';
+    this.currentTrackId = null;
+    this.currentStreamUrl = null;
+    this.audio.removeAttribute('src');
+    try {
+      this.audio.load();
+    } catch {}
     this.audio.playbackRate = 1.0;
   }
 

@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: syncwave
+    runtime: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATA_DIR
+        value: /var/data
+      - key: ADMIN_EMAIL
+        value: admin@syncwave.local
+      - key: ADMIN_INITIAL_PASSWORD
+        generateValue: true
+    disk:
+      name: syncwave-data
+      mountPath: /var/data
+      sizeGB: 1

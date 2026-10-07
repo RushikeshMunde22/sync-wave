@@ -70,6 +70,18 @@ adminRouter.put('/users/:id/ban', (req, res) => {
   }
 });
 
+// POST /users/:id/reset-password
+adminRouter.post('/users/:id/reset-password', async (req, res) => {
+  try {
+    const { newPassword } = z.object({ newPassword: z.string().min(6).optional() }).parse(req.body);
+    const targetId = req.params.id as string;
+    const result = await adminService.resetUserPassword(req.user!.id, targetId, newPassword);
+    res.json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || 'Failed to reset password' });
+  }
+});
+
 // PUT /users/:id/role
 adminRouter.put('/users/:id/role', (req, res) => {
   try {

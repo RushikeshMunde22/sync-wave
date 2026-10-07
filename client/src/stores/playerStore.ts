@@ -9,6 +9,8 @@ export interface TrackInfo {
   streamUrl?: string;
   addedBy?: string;
   attribution?: string;
+  mediaType?: 'audio' | 'video';
+  videoId?: string;
 }
 
 export interface PlaybackState {
@@ -19,6 +21,8 @@ export interface PlaybackState {
   version: number;
   controlledBy: string | null;
   track?: TrackInfo;
+  mediaType?: 'audio' | 'video';
+  videoId?: string;
 }
 
 export interface MemberPresence {
@@ -42,16 +46,33 @@ export interface QueueItem {
   position: number;
 }
 
+export interface SongRequest {
+  id: string;
+  groupId: string;
+  trackId: string;
+  title: string;
+  artist: string;
+  artworkUrl?: string;
+  durationMs: number;
+  mediaType?: 'audio' | 'video';
+  videoId?: string;
+  requestedBy: string;
+  requestedByName: string;
+  createdAt: number;
+}
+
 export interface RoomState {
   groupId: string;
   groupName: string;
   inviteCode?: string;
   theme?: string;
+  mediaMode?: 'music' | 'video' | 'both';
   playback: PlaybackState;
   queue: QueueItem[];
   members: MemberPresence[];
   membersCanControl: boolean;
   myRole: string;
+  songRequests?: SongRequest[];
 }
 
 export interface SkipVoteState {
@@ -73,6 +94,7 @@ interface PlayerStoreState {
   playback: PlaybackState;
   queue: QueueItem[];
   members: MemberPresence[];
+  songRequests: SongRequest[];
   isLocallyPaused: boolean;
   isAdminPaused: boolean;
   adminPausedBy: string | null;
@@ -86,6 +108,7 @@ interface PlayerStoreState {
   setPlayback: (playback: PlaybackState) => void;
   setQueue: (queue: QueueItem[]) => void;
   setMembers: (members: MemberPresence[]) => void;
+  setSongRequests: (songRequests: SongRequest[]) => void;
   addMember: (member: MemberPresence) => void;
   removeMember: (userId: string) => void;
   updateMemberStatus: (userId: string, status: 'listening' | 'paused' | 'buffering') => void;
@@ -110,6 +133,7 @@ export const usePlayerStore = create<PlayerStoreState>((set) => ({
   },
   queue: [],
   members: [],
+  songRequests: [],
   isLocallyPaused: false,
   isAdminPaused: false,
   adminPausedBy: null,
@@ -125,6 +149,7 @@ export const usePlayerStore = create<PlayerStoreState>((set) => ({
       playback: roomState.playback,
       queue: roomState.queue,
       members: roomState.members,
+      songRequests: roomState.songRequests || [],
       isLocallyPaused: false,
       isAdminPaused: !roomState.playback.isPlaying && roomState.playback.controlledBy !== null,
     }),
@@ -140,6 +165,8 @@ export const usePlayerStore = create<PlayerStoreState>((set) => ({
   setQueue: (queue) => set({ queue }),
 
   setMembers: (members) => set({ members }),
+
+  setSongRequests: (songRequests) => set({ songRequests }),
 
   addMember: (member) =>
     set((prev) => {
@@ -204,6 +231,7 @@ export const usePlayerStore = create<PlayerStoreState>((set) => ({
       },
       queue: [],
       members: [],
+      songRequests: [],
       isLocallyPaused: false,
       isAdminPaused: false,
       adminPausedBy: null,

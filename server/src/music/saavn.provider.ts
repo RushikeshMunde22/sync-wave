@@ -1,4 +1,5 @@
 import { MusicProvider, SearchResult, Track } from './provider.interface.js';
+import { decryptSaavnMediaUrl } from './saavn.decrypt.js';
 
 // JioSaavn internal API — same endpoints the web app uses, no API key required
 const SAAVN_API = 'https://www.jiosaavn.com/api.php';
@@ -38,13 +39,30 @@ export class SaavnProvider implements MusicProvider {
   }
 
   private extractStreamUrl(song: any): string | undefined {
-    // Priority 1: vlink (JioTune preview — always accessible, 30-sec MP3)
+    // Priority 1: Full-length decrypted studio 320kbps / 160kbps stream
+    const encrypted = song.more_info?.encrypted_media_url || song.encrypted_media_url;
+    if (encrypted) {
+      const fullUrl = decryptSaavnMediaUrl(encrypted);
+      if (fullUrl) return fullUrl;
+    }
+
+    // Priority 2: Direct media_url if available
+    if (song.media_url && typeof song.media_url === 'string' && song.media_url.startsWith('http')) {
+      return song.media_url;
+    }
+    if (song.more_info?.media_url && typeof song.more_info.media_url === 'string' && song.more_info.media_url.startsWith('http')) {
+      return song.more_info.media_url;
+    }
+
+    // Priority 3: Media preview upgraded to full AAC stream
+    const previewUrl = song.media_preview_url || song.more_info?.media_preview_url;
+    if (previewUrl && typeof previewUrl === 'string' && previewUrl.startsWith('http')) {
+      return previewUrl.replace('preview', 'aac').replace('_96_p.mp4', '_320.mp4');
+    }
+
+    // Priority 4: Fallback vlink
     if (song.more_info?.vlink) {
       return song.more_info.vlink;
-    }
-    // Priority 2: media_url from detailed song data (direct AAC stream)
-    if (song.media_url && song.media_url.startsWith('http')) {
-      return song.media_url;
     }
     return undefined;
   }
@@ -57,35 +75,35 @@ export class SaavnProvider implements MusicProvider {
   }
 
   private mapSearchSong(song: any): Track {
-    const artists = song.more_info?.primary_artists || song.subtitle || 'Unknown Artist';
+    const artists = song.more_info?.primary_artists || song.subtitle || song.primary_artists || 'Unknown Artist';
+    const streamUrl = this.extractStreamUrl(song);
     return {
       id: `saavn:${song.id}`,
       provider: 'saavn' as any,
       providerTrackId: String(song.id),
       title: this.htmlDecode(song.title || song.song || 'Unknown Title'),
       artist: this.htmlDecode(artists),
-      album: song.more_info?.album || undefined,
+      album: song.more_info?.album || song.album || undefined,
       artworkUrl: this.getArtwork(song),
       durationMs: Number(song.more_info?.duration || song.duration || 0) * 1000 || 180000,
-      streamUrl: this.extractStreamUrl(song),
+      streamUrl,
       license: 'JioSaavn Streaming',
       attribution: `${this.htmlDecode(artists)} • JioSaavn`,
     };
   }
 
   private mapDetailSong(song: any): Track {
-    const artists = song.primary_artists || song.singers || 'Unknown Artist';
-    const streamUrl = song.more_info?.vlink ||
-      (song.media_url?.startsWith('http') ? song.media_url : undefined);
+    const artists = song.primary_artists || song.more_info?.primary_artists || song.singers || 'Unknown Artist';
+    const streamUrl = this.extractStreamUrl(song);
     return {
       id: `saavn:${song.id}`,
       provider: 'saavn' as any,
       providerTrackId: String(song.id),
       title: this.htmlDecode(song.song || song.title || 'Unknown Title'),
       artist: this.htmlDecode(artists),
-      album: song.album || undefined,
+      album: song.album || song.more_info?.album || undefined,
       artworkUrl: this.getArtwork(song),
-      durationMs: Number(song.duration || 0) * 1000 || 180000,
+      durationMs: Number(song.more_info?.duration || song.duration || 0) * 1000 || 180000,
       streamUrl,
       license: 'JioSaavn Streaming',
       attribution: `${this.htmlDecode(artists)} • JioSaavn`,
@@ -105,39 +123,7 @@ export class SaavnProvider implements MusicProvider {
 
   async search(query: string, limit = 20, _offset = 0): Promise<SearchResult> {
     try {
-      const url = new URL(SAAVN_API);
-      url.searchParams.set('__call', 'autocomplete.get');
-      url.searchParams.set('query', query);
-      url.searchParams.set('_format', 'json');
-      url.searchParams.set('_marker', '0');
-      url.searchParams.set('api_version', '4');
-      url.searchParams.set('ctx', 'web6dot0');
-
-      const res = await this.fetchWithTimeout(url.toString());
-      if (!res.ok) throw new Error(`Saavn search error: ${res.status}`);
-
-      const data = await res.json();
-      const songs = data?.songs?.data || [];
-
-      const tracks: Track[] = songs
-        .filter((s: any) => s.id && (s.more_info?.vlink || s.more_info?.media_url))
-        .slice(0, limit)
-        .map((s: any) => this.mapSearchSong(s));
-
-      // If autocomplete didn't get enough, fall back to search endpoint
-      if (tracks.length < 5) {
-        return this.searchFallback(query, limit);
-      }
-
-      return { tracks, hasMore: songs.length > limit };
-    } catch (err) {
-      console.error('[Saavn] search error:', err);
-      return this.searchFallback(query, limit);
-    }
-  }
-
-  private async searchFallback(query: string, limit: number): Promise<SearchResult> {
-    try {
+      // Priority: use search.getResults for complete song data and encrypted URLs
       const url = new URL(SAAVN_API);
       url.searchParams.set('__call', 'search.getResults');
       url.searchParams.set('q', query);
@@ -149,19 +135,74 @@ export class SaavnProvider implements MusicProvider {
       url.searchParams.set('p', '1');
 
       const res = await this.fetchWithTimeout(url.toString());
-      if (!res.ok) throw new Error(`Saavn fallback error: ${res.status}`);
+      if (res.ok) {
+        const data = await res.json();
+        const results = data?.results || [];
+        if (Array.isArray(results) && results.length > 0) {
+          const tracks: Track[] = results
+            .filter((s: any) => s.id)
+            .slice(0, limit)
+            .map((s: any) => this.mapSearchSong(s));
+
+          return { tracks, hasMore: results.length >= limit };
+        }
+      }
+
+      // Fallback: autocomplete.get
+      return this.searchAutocomplete(query, limit);
+    } catch (err) {
+      console.error('[Saavn] search error:', err);
+      return this.searchAutocomplete(query, limit);
+    }
+  }
+
+  private async searchAutocomplete(query: string, limit: number): Promise<SearchResult> {
+    try {
+      const url = new URL(SAAVN_API);
+      url.searchParams.set('__call', 'autocomplete.get');
+      url.searchParams.set('query', query);
+      url.searchParams.set('_format', 'json');
+      url.searchParams.set('_marker', '0');
+      url.searchParams.set('api_version', '4');
+      url.searchParams.set('ctx', 'web6dot0');
+
+      const res = await this.fetchWithTimeout(url.toString());
+      if (!res.ok) throw new Error(`Saavn autocomplete error: ${res.status}`);
 
       const data = await res.json();
-      const results = data?.results || [];
+      const songs = data?.songs?.data || [];
 
-      const tracks: Track[] = results
-        .filter((s: any) => s.id)
-        .slice(0, limit)
-        .map((s: any) => this.mapSearchSong(s));
+      // If songs found, batch fetch details for top songs
+      const pids = songs.map((s: any) => s.id).filter(Boolean).slice(0, limit);
+      if (pids.length > 0) {
+        const detailUrl = new URL(SAAVN_API);
+        detailUrl.searchParams.set('__call', 'song.getDetails');
+        detailUrl.searchParams.set('pids', pids.join(','));
+        detailUrl.searchParams.set('_format', 'json');
+        detailUrl.searchParams.set('_marker', '0');
+        detailUrl.searchParams.set('api_version', '4');
+        detailUrl.searchParams.set('ctx', 'web6dot0');
 
-      return { tracks, hasMore: results.length >= limit };
+        const detailRes = await this.fetchWithTimeout(detailUrl.toString());
+        if (detailRes.ok) {
+          const detailData = await detailRes.json();
+          const detailTracks: Track[] = [];
+          for (const pid of pids) {
+            const raw = detailData[pid];
+            if (raw) {
+              detailTracks.push(this.mapDetailSong(raw));
+            }
+          }
+          if (detailTracks.length > 0) {
+            return { tracks: detailTracks, hasMore: songs.length > limit };
+          }
+        }
+      }
+
+      const tracks: Track[] = songs.slice(0, limit).map((s: any) => this.mapSearchSong(s));
+      return { tracks, hasMore: songs.length > limit };
     } catch (err) {
-      console.error('[Saavn] searchFallback error:', err);
+      console.error('[Saavn] searchAutocomplete error:', err);
       return { tracks: [], hasMore: false };
     }
   }
@@ -216,6 +257,25 @@ export class SaavnProvider implements MusicProvider {
 
   async getStreamUrl(providerTrackId: string): Promise<string | null> {
     const track = await this.getTrack(providerTrackId);
-    return track?.streamUrl || null;
+    if (!track?.streamUrl) return null;
+
+    const url = track.streamUrl;
+    if (url.includes('_320.')) {
+      try {
+        const headCheck = await fetch(url, { method: 'HEAD' });
+        if (headCheck.ok) return url;
+
+        // Try 160kbps fallback
+        const url160 = url.replace('_320.', '_160.');
+        const check160 = await fetch(url160, { method: 'HEAD' });
+        if (check160.ok) return url160;
+
+        // Try 96kbps fallback
+        return url.replace('_320.', '_96.');
+      } catch {
+        return url;
+      }
+    }
+    return url;
   }
 }

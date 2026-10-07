@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { api } from '../lib/api';
+import { PromotionalBanner } from '../components/PromotionalBanner';
+import { BrandFooter } from '../components/BrandFooter';
 
 interface Playlist {
   id: string;
@@ -31,6 +34,10 @@ export default function ProfilePage() {
   const [loadingPlaylists, setLoadingPlaylists] = useState(true);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [creatingPlaylist, setCreatingPlaylist] = useState(false);
+  const [expandedPlaylistId, setExpandedPlaylistId] = useState<string | null>(null);
+  const [playlistDetails, setPlaylistDetails] = useState<Record<string, { tracks: any[] }>>({});
+  const [loadingDetails, setLoadingDetails] = useState<Record<string, boolean>>({});
+  const [launchingRoom, setLaunchingRoom] = useState<string | null>(null);
 
   // Calculate word count
   const wordCount = feedbackContent.trim() ? feedbackContent.trim().split(/\s+/).filter(Boolean).length : 0;
@@ -115,19 +122,94 @@ export default function ProfilePage() {
     }
   };
 
+  const handleToggleExpand = async (playlistId: string) => {
+    if (expandedPlaylistId === playlistId) {
+      setExpandedPlaylistId(null);
+      return;
+    }
+    setExpandedPlaylistId(playlistId);
+    if (!playlistDetails[playlistId]) {
+      try {
+        setLoadingDetails((prev) => ({ ...prev, [playlistId]: true }));
+        const res = await api.get(`/api/playlists/${playlistId}`);
+        setPlaylistDetails((prev) => ({ ...prev, [playlistId]: { tracks: res.data?.tracks || [] } }));
+      } catch (err) {
+        console.error('Failed to load playlist details:', err);
+      } finally {
+        setLoadingDetails((prev) => ({ ...prev, [playlistId]: false }));
+      }
+    }
+  };
+
+  const handleRemoveTrackFromPlaylist = async (playlistId: string, trackEntryId: string) => {
+    try {
+      await api.delete(`/api/playlists/${playlistId}/tracks/${trackEntryId}`);
+      setPlaylistDetails((prev) => ({
+        ...prev,
+        [playlistId]: {
+          tracks: (prev[playlistId]?.tracks || []).filter((t: any) => t.id !== trackEntryId),
+        },
+      }));
+      setPlaylists((prev) =>
+        prev.map((pl) =>
+          pl.id === playlistId ? { ...pl, trackCount: Math.max(0, pl.trackCount - 1) } : pl
+        )
+      );
+    } catch (err: any) {
+      alert(err.message || 'Failed to remove track from playlist');
+    }
+  };
+
+  const handleLaunchRoomWithPlaylist = async (pl: Playlist) => {
+    try {
+      setLaunchingRoom(pl.id);
+      const createRes = await api.post('/api/groups', {
+        name: `${pl.name} Lounge`,
+        mediaMode: 'both',
+        maxMembers: 50,
+        theme: 'default',
+      });
+      const newGroupId = createRes.data?.id;
+      if (newGroupId) {
+        await api.post(`/api/groups/${newGroupId}/queue/import-playlist`, {
+          playlistId: pl.id,
+        });
+        window.location.href = `/room/${newGroupId}`;
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to launch room with playlist');
+    } finally {
+      setLaunchingRoom(null);
+    }
+  };
+
   const handleDeletePlaylist = async (id: string) => {
     if (!confirm('Are you sure you want to delete this playlist?')) return;
     try {
       await api.delete(`/api/playlists/${id}`);
       setPlaylists((prev) => prev.filter((p) => p.id !== id));
+      if (expandedPlaylistId === id) setExpandedPlaylistId(null);
     } catch (err: any) {
       alert(err.message || 'Failed to delete playlist');
     }
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white p-4 sm:p-6 lg:p-8 pb-28 md:pb-8">
-      <div className="max-w-3xl mx-auto space-y-8">
+    <div className="min-h-screen bg-neutral-950 text-white p-4 sm:p-6 lg:p-8 pb-28 md:pb-8 flex flex-col justify-between">
+      <div className="max-w-3xl mx-auto w-full space-y-8">
+        {/* Navigation & Hero Announcement */}
+        <div className="flex items-center justify-between">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-neutral-700 text-neutral-300 hover:text-white text-xs font-semibold shadow-md transition-all hover:-translate-x-0.5"
+          >
+            <ArrowLeft size={14} />
+            <span>← Back to Home Dashboard</span>
+          </Link>
+        </div>
+
+        <PromotionalBanner allowDismiss={false} />
+
         <header>
           <h1 className="text-3xl font-extrabold tracking-tight">Account & Settings</h1>
           <p className="text-neutral-400 text-sm mt-1">Manage your identity, personal playlists, and send feedback.</p>
@@ -309,28 +391,128 @@ export default function ProfilePage() {
               No playlists yet. Create one above to save tracks!
             </div>
           ) : (
-            <div className="space-y-2">
-              {playlists.map((pl) => (
-                <div
-                  key={pl.id}
-                  className="flex items-center justify-between p-3 rounded-2xl bg-neutral-950 border border-neutral-800/80 hover:border-neutral-700 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl">🎶</span>
-                    <div>
-                      <p className="text-xs font-bold">{pl.name}</p>
-                      <p className="text-[10px] text-neutral-400">{pl.trackCount} tracks</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleDeletePlaylist(pl.id)}
-                    className="text-neutral-500 hover:text-rose-400 text-xs p-1 transition-colors"
-                    title="Delete playlist"
+            <div className="space-y-3">
+              {playlists.map((pl) => {
+                const isExpanded = expandedPlaylistId === pl.id;
+                const details = playlistDetails[pl.id];
+                const isLoadingTracks = loadingDetails[pl.id];
+
+                return (
+                  <div
+                    key={pl.id}
+                    className="rounded-2xl bg-neutral-950 border border-neutral-800/80 overflow-hidden transition-all shadow"
                   >
-                    🗑️
-                  </button>
-                </div>
-              ))}
+                    {/* Header Row */}
+                    <div className="flex items-center justify-between p-3.5 gap-2">
+                      <button
+                        onClick={() => handleToggleExpand(pl.id)}
+                        className="flex items-center gap-3 text-left flex-1 min-w-0 group"
+                      >
+                        <span className="text-xl group-hover:scale-110 transition-transform">🎶</span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold truncate group-hover:text-indigo-400 transition-colors">
+                            {pl.name}
+                          </p>
+                          <p className="text-[10px] text-neutral-400">
+                            {pl.trackCount} tracks • {isExpanded ? 'Click to collapse' : 'Click to view tracks'}
+                          </p>
+                        </div>
+                      </button>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          disabled={launchingRoom === pl.id || pl.trackCount === 0}
+                          onClick={() => handleLaunchRoomWithPlaylist(pl)}
+                          className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-[11px] font-bold px-3 py-1.5 rounded-xl transition-all shadow-md shadow-indigo-600/20 flex items-center gap-1.5"
+                          title="Create a room and immediately import this playlist"
+                        >
+                          <span>🚀</span>
+                          <span className="hidden sm:inline">
+                            {launchingRoom === pl.id ? 'Starting Room...' : 'Launch Room'}
+                          </span>
+                        </button>
+
+                        <button
+                          onClick={() => handleDeletePlaylist(pl.id)}
+                          className="text-neutral-500 hover:text-rose-400 text-xs p-1.5 rounded-lg transition-colors"
+                          title="Delete playlist"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Expandable Tracks Area */}
+                    {isExpanded && (
+                      <div className="border-t border-neutral-800/70 p-3 bg-neutral-900/40 space-y-2">
+                        {isLoadingTracks ? (
+                          <div className="py-4 text-center text-xs text-neutral-500 animate-pulse">
+                            Loading playlist tracks...
+                          </div>
+                        ) : !details || details.tracks.length === 0 ? (
+                          <div className="py-3 text-center text-xs text-neutral-500 italic">
+                            No tracks saved in this playlist yet. Add songs from search results or rooms!
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                            {details.tracks.map((entry: any, index: number) => {
+                              const track = entry.track || entry;
+                              const durSec = Math.floor((track.durationMs || 0) / 1000);
+                              const mins = Math.floor(durSec / 60);
+                              const secs = String(durSec % 60).padStart(2, '0');
+
+                              return (
+                                <div
+                                  key={entry.id || `${track.id}-${index}`}
+                                  className="flex items-center justify-between p-2 rounded-xl bg-neutral-950/80 border border-neutral-800/60 hover:border-neutral-700/80 text-xs transition-colors group"
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                    <span className="text-[10px] text-neutral-500 font-mono w-4 text-right">
+                                      {index + 1}
+                                    </span>
+                                    {track.artworkUrl ? (
+                                      <img
+                                        src={track.artworkUrl}
+                                        alt=""
+                                        className="w-7 h-7 rounded-lg object-cover border border-white/10 shrink-0"
+                                      />
+                                    ) : (
+                                      <div className="w-7 h-7 rounded-lg bg-indigo-600/30 flex items-center justify-center text-xs shrink-0">
+                                        🎵
+                                      </div>
+                                    )}
+                                    <div className="min-w-0 flex-1">
+                                      <p className="font-semibold text-white truncate text-xs">
+                                        {track.title}
+                                      </p>
+                                      <p className="text-[10px] text-neutral-400 truncate">
+                                        {track.artist}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 shrink-0 ml-2">
+                                    <span className="text-[10px] text-neutral-500 font-mono">
+                                      {mins}:{secs}
+                                    </span>
+                                    <button
+                                      onClick={() => handleRemoveTrackFromPlaylist(pl.id, entry.id)}
+                                      className="text-neutral-500 hover:text-rose-400 p-1 rounded transition-colors text-xs"
+                                      title="Remove from playlist"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
@@ -371,6 +553,10 @@ export default function ProfilePage() {
             </button>
           </div>
         </section>
+      </div>
+
+      <div className="-mx-4 sm:-mx-6 lg:-mx-8">
+        <BrandFooter />
       </div>
     </div>
   );

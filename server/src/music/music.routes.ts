@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { providerManager } from './provider.manager.js';
 import { musicCache } from './music.cache.js';
 import { SearchQuerySchema, TrendingQuerySchema, TrackParamsSchema } from './music.schemas.js';
+import { getLyrics } from './lyrics.service.js';
 import { requireAuth } from '../auth/auth.middleware.js';
 import rateLimit from 'express-rate-limit';
 
@@ -17,6 +18,39 @@ const streamLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 60,
   keyGenerator: (req: any) => req.user?.id || req.ip
+});
+
+router.get('/lyrics', async (req, res, next) => {
+  try {
+    const title = (req.query.title as string) || '';
+    const artist = (req.query.artist as string) || '';
+    const duration = req.query.duration ? parseFloat(req.query.duration as string) : undefined;
+
+    if (!title) {
+      return res.status(400).json({ error: 'Title is required for lyrics lookup' });
+    }
+
+    const lyrics = await getLyrics({ title, artist, duration });
+    res.json(lyrics);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/stream/:provider/:id', streamLimiter, async (req, res, next) => {
+  try {
+    const { provider, id } = TrackParamsSchema.parse(req.params);
+    
+    const streamUrl = await providerManager.getStreamUrl(provider, id);
+    
+    if (!streamUrl) {
+      return res.status(404).json({ error: 'Stream not found' });
+    }
+    
+    res.redirect(302, streamUrl);
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.use(requireAuth);
@@ -82,22 +116,6 @@ router.get('/track/:provider/:id', async (req, res, next) => {
     }
     
     res.json(track);
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get('/stream/:provider/:id', streamLimiter, async (req, res, next) => {
-  try {
-    const { provider, id } = TrackParamsSchema.parse(req.params);
-    
-    const streamUrl = await providerManager.getStreamUrl(provider, id);
-    
-    if (!streamUrl) {
-      return res.status(404).json({ error: 'Stream not found' });
-    }
-    
-    res.redirect(302, streamUrl);
   } catch (error) {
     next(error);
   }

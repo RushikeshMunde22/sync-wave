@@ -8,8 +8,10 @@ import {
   ServerCog,
   Activity,
   MessageSquare,
+  Megaphone,
   LogOut
 } from 'lucide-react';
+import { BrandLogo } from '../../components/BrandLogo';
 
 export default function AdminLayout() {
   const { user, logout } = useAuthStore();
@@ -34,8 +36,8 @@ export default function AdminLayout() {
       <aside className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col">
         <div className="p-6 border-b border-gray-800 flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-bold tracking-wider text-indigo-400">SYNCWAVE</h1>
-            <p className="text-[10px] text-gray-400 font-mono">ADMIN CONTROL</p>
+            <BrandLogo size="xs" animated={false} />
+            <p className="text-[9px] text-neutral-400 font-mono tracking-widest mt-1">ADMIN CONSOLE</p>
           </div>
           <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[10px] text-emerald-400 font-mono">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -50,6 +52,10 @@ export default function AdminLayout() {
           <NavLink to="/admin/feedback" className={navClass}>
             <MessageSquare size={20} />
             User Feedback
+          </NavLink>
+          <NavLink to="/admin/promotions" className={navClass}>
+            <Megaphone size={20} />
+            Promotions & Ads
           </NavLink>
           <NavLink to="/admin/users" className={navClass}>
             <Users size={20} />

@@ -82,6 +82,27 @@ export async function seedSuperadmin(): Promise<void> {
       }
     }
   }
+
+  // Ensure EMAIL_USER has an active superadmin account
+  if (config.EMAIL_USER) {
+    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(config.EMAIL_USER) as { id: string } | undefined;
+    if (!existing) {
+      console.log(`[Seed] Creating superadmin account for ${config.EMAIL_USER}...`);
+      try {
+        const id = uuidv4();
+        const pwdHash = await argon2.hash('Password123!');
+        const recoveryCode = crypto.randomBytes(16).toString('hex');
+        const recoveryCodeHash = await argon2.hash(recoveryCode);
+        db.prepare(`
+          INSERT INTO users (id, email, password_hash, display_name, role, recovery_code_hash)
+          VALUES (?, ?, ?, ?, 'superadmin', ?)
+        `).run(id, config.EMAIL_USER, pwdHash, 'Rushikesh (Superadmin)', recoveryCodeHash);
+        console.log(`[Seed] Account created for ${config.EMAIL_USER} with password: Password123!`);
+      } catch (err) {
+        console.error('[Seed] Failed to create EMAIL_USER account:', err);
+      }
+    }
+  }
 }
 
 export const runSeeder = seedSuperadmin;

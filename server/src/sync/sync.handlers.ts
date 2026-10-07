@@ -26,6 +26,9 @@ const reorderQueueSchema = z.object({ groupId: z.string().min(1), queueItemId: z
 const reactionSchema = z.object({ groupId: z.string().min(1), emoji: z.string().min(1) });
 const skipvoteSchema = z.object({ groupId: z.string().min(1) });
 const presenceSchema = z.object({ groupId: z.string().min(1), status: z.enum(['listening', 'paused', 'buffering']) });
+const songRequestSubmitSchema = z.object({ groupId: z.string().min(1), trackId: z.string().min(1) });
+const songRequestApproveSchema = z.object({ groupId: z.string().min(1), requestId: z.string().min(1), action: z.enum(['play-now', 'queue']) });
+const songRequestRejectSchema = z.object({ groupId: z.string().min(1), requestId: z.string().min(1) });
 
 const ALLOWED_EMOJIS = ['❤️', '🔥', '😂', '😮', '👏', '🎶', '😭', '🙌'];
 
@@ -62,6 +65,11 @@ function checkReactionRateLimit(userId: string): boolean {
 }
 
 let activeIo: SocketIOServer<ClientToServerEvents, ServerToClientEvents> | null = null;
+let activeSyncEngine: SyncEngine | null = null;
+
+export function getSyncEngine(): SyncEngine | null {
+  return activeSyncEngine;
+}
 
 export function getLiveConnectedUsersCount(): number {
   if (!activeIo) return 0;
@@ -71,6 +79,7 @@ export function getLiveConnectedUsersCount(): number {
 export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, ServerToClientEvents>) {
   activeIo = io;
   const engine = new SyncEngine(io);
+  activeSyncEngine = engine;
   engine.init();
 
   // Apply global auth middleware
@@ -160,11 +169,13 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
             groupName: group.name,
             inviteCode: group.inviteCode,
             theme: group.theme,
+            mediaMode: group.mediaMode || 'music',
             playback,
             queue,
             members,
             membersCanControl: group.membersCanControl,
-            myRole: role
+            myRole: role,
+            songRequests: engine.getSongRequests(groupId)
           }
         });
       } catch (err: any) {
@@ -260,6 +271,8 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
         const group = await getGroup(groupId);
         if (role === 'owner' || role === 'admin' || group?.membersCanControl) {
           await engine.loadTrack(groupId, user.id, trackId);
+        } else {
+          socket.emit('error', { message: 'Only Group Admins can play tracks immediately' });
         }
       } catch (err) { }
     });
@@ -275,7 +288,13 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
     socket.on('queue:add', async (data) => {
       try {
         const { groupId, trackId, playNext } = validateSocketPayload(addQueueSchema, data);
-        await engine.addToQueue(groupId, user.id, trackId, playNext);
+        const role = await getMemberRole(user.id, groupId);
+        const group = await getGroup(groupId);
+        if (role === 'owner' || role === 'admin' || group?.membersCanControl) {
+          await engine.addToQueue(groupId, user.id, trackId, playNext);
+        } else {
+          socket.emit('error', { message: 'Only Group Admins can add songs to the queue' });
+        }
       } catch (err) { }
     });
 
@@ -333,6 +352,35 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
             currentVotes: result.currentVotes,
             voters: [user.id]
           });
+        }
+      } catch (err) { }
+    });
+
+    socket.on('song-request:submit', async (data) => {
+      try {
+        const { groupId, trackId } = validateSocketPayload(songRequestSubmitSchema, data);
+        await engine.addSongRequest(groupId, user.id, trackId);
+      } catch (err) { }
+    });
+
+    socket.on('song-request:approve', async (data) => {
+      try {
+        const { groupId, requestId, action } = validateSocketPayload(songRequestApproveSchema, data);
+        const role = await getMemberRole(user.id, groupId);
+        const group = await getGroup(groupId);
+        if (role === 'owner' || role === 'admin' || group?.membersCanControl) {
+          await engine.approveSongRequest(groupId, requestId, action);
+        }
+      } catch (err) { }
+    });
+
+    socket.on('song-request:reject', async (data) => {
+      try {
+        const { groupId, requestId } = validateSocketPayload(songRequestRejectSchema, data);
+        const role = await getMemberRole(user.id, groupId);
+        const group = await getGroup(groupId);
+        if (role === 'owner' || role === 'admin' || group?.membersCanControl) {
+          await engine.rejectSongRequest(groupId, requestId);
         }
       } catch (err) { }
     });
