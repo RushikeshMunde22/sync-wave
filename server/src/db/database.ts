@@ -12,7 +12,7 @@ export function initializeDatabase(): void {
 
 export function getDb(): DatabaseType {
   if (!db) {
-    const dataDir = config.DATA_DIR;
+    const dataDir = path.resolve(process.cwd(), config.DATA_DIR);
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
@@ -24,15 +24,20 @@ export function getDb(): DatabaseType {
       timeout: 5000,
     });
 
-    // Performance and safety pragmas
-    db.pragma('journal_mode = WAL');
+    // Performance and safety pragmas with container-safe fallback
+    try {
+      db.pragma('journal_mode = WAL');
+    } catch (err) {
+      console.warn('[DB] WAL journal mode failed, falling back to DELETE mode:', err);
+      db.pragma('journal_mode = DELETE');
+    }
     db.pragma('synchronous = NORMAL');
     db.pragma('foreign_keys = ON');
     db.pragma('busy_timeout = 5000');
     db.pragma('cache_size = -64000');
     db.pragma('temp_store = MEMORY');
 
-    console.log('[DB] Database connected and configured (WAL mode, FK ON).');
+    console.log('[DB] Database connected and configured.');
   }
   return db;
 }
