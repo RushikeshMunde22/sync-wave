@@ -12,7 +12,6 @@
   "dependencies": {
     "argon2": "^0.41.0",
     "better-sqlite3": "^13.0.3",
-    "color-thief-node": "^1.0.4",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "cron": "^3.2.0",
