@@ -67,8 +67,10 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction) 
   }
 
   let normalizedOrigin: string;
+  let parsedUrl: URL;
   try {
-    normalizedOrigin = new URL(origin).origin;
+    parsedUrl = new URL(origin);
+    normalizedOrigin = parsedUrl.origin;
   } catch {
     res.status(403).json({ error: 'CSRF token invalid (malformed origin)' });
     return;
@@ -88,10 +90,25 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction) 
     'http://127.0.0.1:5173',
   ].filter(Boolean);
 
+  const hostname = parsedUrl.hostname;
+
+  // Same-origin check: compare against current server host (including reverse-proxy headers)
+  const forwardedHost = req.headers['x-forwarded-host'];
+  const hostHeader = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) || req.headers.host || '';
+  const currentHostname = hostHeader.split(':')[0];
+
+  const isSameHost = Boolean(currentHostname && (hostname === currentHostname));
+
   const isAllowed =
+    isSameHost ||
     allowedOrigins.includes(normalizedOrigin) ||
-    normalizedOrigin.endsWith('.work.gd') ||
-    normalizedOrigin.endsWith('.local');
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname.endsWith('.onrender.com') ||
+    hostname.endsWith('.vercel.app') ||
+    hostname === 'syncwave.work.gd' ||
+    hostname.endsWith('.work.gd') ||
+    hostname.endsWith('.local');
 
   if (!isAllowed) {
     res.status(403).json({ error: 'CSRF token missing or invalid (origin mismatch)' });

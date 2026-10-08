@@ -11,12 +11,14 @@ const router = Router();
 const searchLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
+  validate: { trustProxy: false, xForwardedForHeader: false },
   keyGenerator: (req: any) => req.user?.id || req.ip
 });
 
 const streamLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 60,
+  validate: { trustProxy: false, xForwardedForHeader: false },
   keyGenerator: (req: any) => req.user?.id || req.ip
 });
 

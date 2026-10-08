@@ -30,6 +30,9 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const httpServer = createServer(app);
 
+// Trust first reverse proxy (Render, Cloudflare, etc.) to accurately identify client IPs and HTTPS
+app.set('trust proxy', 1);
+
 // Bulletproof security: Hide Express signature
 app.disable('x-powered-by');
 
@@ -54,7 +57,8 @@ const corsOriginChecker = (origin: string | undefined, callback: (err: Error | n
       hostname.endsWith('.onrender.com') ||
       hostname.endsWith('.vercel.app') ||
       hostname === 'syncwave.work.gd' ||
-      hostname.endsWith('.work.gd')
+      hostname.endsWith('.work.gd') ||
+      hostname.endsWith('.local')
     ) {
       return callback(null, true);
     }
@@ -172,6 +176,7 @@ const globalLimiter = rateLimit({
   max: 500,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false, xForwardedForHeader: false },
   message: { error: 'Too many requests, please try again later.' },
 });
 app.use('/api/', globalLimiter);
