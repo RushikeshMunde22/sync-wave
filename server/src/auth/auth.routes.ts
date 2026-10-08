@@ -204,6 +204,91 @@ router.delete('/me', requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
+router.get('/config', (_req, res) => {
+  res.json({
+    googleClientId: config.GOOGLE_CLIENT_ID || null,
+    signupsDisabled: config.SIGNUPS_DISABLED,
+  });
+});
+
+router.post('/google', loginLimiter, async (req, res) => {
+  try {
+    const { credential } = req.body;
+    if (!credential || typeof credential !== 'string') {
+      return res.status(400).json({ error: 'Google credential token is required' });
+    }
+
+    // Verify Google ID token via Google's tokeninfo endpoint
+    const googleVerifyUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`;
+    const googleRes = await fetch(googleVerifyUrl);
+
+    if (!googleRes.ok) {
+      return res.status(401).json({ error: 'Invalid Google authentication credential' });
+    }
+
+    const payload: any = await googleRes.json();
+    const email = payload.email?.toLowerCase();
+    const emailVerified = payload.email_verified === 'true' || payload.email_verified === true;
+    const name = payload.name || payload.given_name || email?.split('@')[0] || 'SyncWave User';
+
+    if (!email || !emailVerified) {
+      return res.status(401).json({ error: 'Google account email is not verified' });
+    }
+
+    // Validate audience if GOOGLE_CLIENT_ID is configured
+    if (config.GOOGLE_CLIENT_ID && payload.aud !== config.GOOGLE_CLIENT_ID) {
+      console.warn('[Auth] Google token audience mismatch:', payload.aud, 'expected:', config.GOOGLE_CLIENT_ID);
+      return res.status(401).json({ error: 'Google client ID mismatch' });
+    }
+
+    // Find existing user or create a new user
+    let user = findUserByEmail(email);
+    let isNewUser = false;
+
+    if (!user) {
+      if (config.SIGNUPS_DISABLED) {
+        return res.status(403).json({ error: 'New user registrations are currently disabled' });
+      }
+
+      const created = await createUser({
+        email,
+        displayName: name,
+        avatarEmoji: '⚡',
+        avatarColor: '#6366f1',
+      });
+      user = created.user;
+      isNewUser = true;
+
+      // Dispatch welcome email
+      sendWelcomeEmail(user.email, user.displayName).catch((e) => console.error('[Mail] Welcome error:', e));
+    }
+
+    if (user.isBanned) {
+      return res.status(403).json({ error: 'Account is banned' });
+    }
+
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    const oldSessionId = req.signedCookies['syncwave_session'];
+    let sessionId: string;
+
+    if (oldSessionId) {
+      try {
+        sessionId = rotateSession(oldSessionId, userAgent);
+      } catch {
+        sessionId = createSession(user.id, userAgent);
+      }
+    } else {
+      sessionId = createSession(user.id, userAgent);
+    }
+
+    res.cookie('syncwave_session', sessionId, cookieOptions);
+    res.json({ user, isNewUser });
+  } catch (err: any) {
+    console.error('[Auth] Google sign-in error:', err);
+    res.status(500).json({ error: 'Failed to process Google sign-in' });
+  }
+});
+
 router.get('/csrf-token', (_req, res) => {
   res.json({ message: 'Origin-based CSRF protection in use, no token required.' });
 });

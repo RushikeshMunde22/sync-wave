@@ -56,6 +56,12 @@ const configSchema = z.object({
   
   EMAIL_USER: z.string().optional(),
   EMAIL_PASS: z.string().optional(),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_SECURE: z.string().optional().transform(v => v === 'true' || v === '1'),
+  EMAIL_FROM: z.string().optional(),
 });
 
 type Config = z.infer<typeof configSchema>;

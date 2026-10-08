@@ -8,6 +8,7 @@ import { providerManager } from '../music/provider.manager.js';
 import path from 'path';
 import fs from 'fs';
 import { config } from '../config.js';
+import { testSmtpConnection } from '../mail/mail.service.js';
 
 export const adminRouter = Router();
 
@@ -265,4 +266,14 @@ adminRouter.get('/feature-flags', (_req, res) => {
 // GET /analytics
 adminRouter.get('/analytics', (_req, res) => {
   res.json(adminService.getAnalytics());
+});
+
+// POST /test-email (Test SMTP connection and delivery diagnostics)
+adminRouter.post('/test-email', async (_req, res) => {
+  try {
+    const result = await testSmtpConnection();
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message || 'SMTP test failed' });
+  }
 });

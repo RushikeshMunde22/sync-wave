@@ -811,9 +811,9 @@ export default function RoomPage() {
         </div>
 
         {/* Scrubber / Progress Bar */}
-        <div className="w-full mt-6 space-y-1.5">
+        <div className="w-full mt-5 space-y-1">
           <div
-            className={`h-2 bg-neutral-800 rounded-full overflow-hidden relative ${
+            className={`py-2.5 -my-2 flex items-center select-none ${
               canControlPlayback ? 'cursor-pointer' : 'cursor-default'
             }`}
             onClick={(e) => {
@@ -824,10 +824,12 @@ export default function RoomPage() {
               handleSeek(ratio * durationMs);
             }}
           >
-            <div
-              className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full transition-all duration-150"
-              style={{ width: `${progressPercent}%` }}
-            />
+            <div className="w-full h-2 sm:h-2.5 bg-neutral-800 rounded-full overflow-hidden relative">
+              <div
+                className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full transition-all duration-150"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
           </div>
           <div className="flex justify-between text-[11px] font-mono text-neutral-500">
             <span>{formatTime(currentTimeMs)}</span>

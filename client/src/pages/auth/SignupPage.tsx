@@ -3,6 +3,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BrandLogo } from '../../components/BrandLogo';
+import { GoogleLoginButton } from '../../components/auth/GoogleLoginButton';
 
 const EMOJI_OPTIONS = ['🎧', '🎵', '⚡', '🔥', '🚀', '✨', '🎸', '🎹'];
 const COLOR_OPTIONS = ['#ffffff', '#e2e8f0', '#94a3b8', '#38bdf8', '#818cf8', '#a855f7', '#ec4899', '#10b981'];
@@ -172,11 +173,24 @@ export default function SignupPage() {
               <button 
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-white hover:bg-neutral-100 text-[#03050a] rounded-xl py-3.5 font-bold text-sm shadow-[0_0_25px_rgba(255,255,255,0.25)] hover:shadow-[0_0_35px_rgba(255,255,255,0.4)] transition-all disabled:opacity-50 mt-6"
+                className="w-full bg-white hover:bg-neutral-100 text-[#03050a] rounded-xl py-3.5 font-bold text-sm shadow-[0_0_25px_rgba(255,255,255,0.25)] hover:shadow-[0_0_35px_rgba(255,255,255,0.4)] transition-all disabled:opacity-50 mt-6 cursor-pointer"
               >
                 {isLoading ? 'Creating Account...' : 'Sign Up Free'}
               </button>
             </form>
+
+            {/* Google One-Click Account Creation */}
+            <div className="mt-5 space-y-3">
+              <div className="relative flex items-center justify-center">
+                <div className="border-t border-white/10 w-full" />
+                <span className="bg-[#070b16] px-3 text-[11px] font-semibold text-neutral-400 uppercase tracking-wider relative">
+                  Or Sign Up With
+                </span>
+                <div className="border-t border-white/10 w-full" />
+              </div>
+
+              <GoogleLoginButton text="signup_with" />
+            </div>
 
             <div className="mt-6 text-center text-xs text-neutral-400">
               Already have an account?{' '}

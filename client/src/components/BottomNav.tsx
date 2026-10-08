@@ -4,6 +4,11 @@ export default function BottomNav() {
   const location = useLocation();
   const path = location.pathname;
 
+  // Hide bottom navigation in active rooms to maximize mobile screen space for player and controls
+  if (path.startsWith('/room/')) {
+    return null;
+  }
+
   const tabs = [
     { name: 'Home', path: '/', icon: '🏠' },
     { name: 'Discover', path: '/discover', icon: '🔍' },
@@ -11,7 +16,7 @@ export default function BottomNav() {
   ];
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-neutral-900/90 backdrop-blur-md border-t border-neutral-800 p-4 pb-safe flex justify-around items-center md:hidden z-50">
+    <div className="fixed bottom-0 left-0 right-0 bg-neutral-900/95 backdrop-blur-lg border-t border-neutral-800/80 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex justify-around items-center md:hidden z-50">
       {tabs.map((tab) => (
         <Link 
           key={tab.path} 

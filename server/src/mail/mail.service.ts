@@ -6,36 +6,89 @@ let transporterVerified = false;
 
 function getTransporter(): Transporter | null {
   if (!transporter) {
-    const user = config.EMAIL_USER;
-    const rawPass = config.EMAIL_PASS;
-    // Gmail App Passwords have spaces (e.g. "qstw eemt rqxd ltsj") — strip them
+    const host = config.SMTP_HOST;
+    const port = config.SMTP_PORT;
+    const user = config.SMTP_USER || config.EMAIL_USER;
+    const rawPass = config.SMTP_PASS || config.EMAIL_PASS;
+    // Strip all whitespace from passwords (crucial for Gmail App Passwords copied with spaces)
     const pass = rawPass ? rawPass.replace(/\s+/g, '') : '';
+    const secure = config.SMTP_SECURE !== undefined ? config.SMTP_SECURE : (port === 465 || !port);
 
-    if (user && pass) {
+    if (host && user && pass) {
+      // 1. Custom SMTP provider (Brevo, SendGrid, Mailgun, Resend, etc.)
       transporter = nodemailer.createTransport({
-        service: 'gmail',
+        host,
+        port: port || (secure ? 465 : 587),
+        secure,
         auth: { user, pass },
+        connectionTimeout: 10000,
+        greetingTimeout: 5000,
+        socketTimeout: 15000,
         tls: { rejectUnauthorized: false },
       });
-      console.log('[Mail] Nodemailer configured with Gmail SMTP for:', user);
-
-      // Verify connection in background (non-blocking)
-      if (!transporterVerified) {
-        transporter.verify().then(() => {
-          transporterVerified = true;
-          console.log('[Mail] SMTP connection verified successfully.');
-        }).catch((err: any) => {
-          console.error('[Mail] SMTP verification FAILED:', err.message || err);
-          console.error('[Mail] Emails will NOT be delivered. Check EMAIL_USER/EMAIL_PASS in .env');
-          // Reset so we retry on next send
-          transporter = null;
-        });
-      }
+      console.log(`[Mail] Configured custom SMTP (${host}:${port || (secure ? 465 : 587)}) for:`, user);
+    } else if (user && pass) {
+      // 2. Direct Gmail SSL over port 465 (most reliable on cloud containers like Render)
+      transporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        auth: { user, pass },
+        connectionTimeout: 10000,
+        greetingTimeout: 5000,
+        socketTimeout: 15000,
+        tls: { rejectUnauthorized: false },
+      });
+      console.log('[Mail] Configured direct Gmail SSL (smtp.gmail.com:465) for:', user);
     } else {
-      console.warn('[Mail] EMAIL_USER or EMAIL_PASS not set. Emails will be logged to console only.');
+      console.warn('[Mail] EMAIL_USER / EMAIL_PASS or SMTP credentials not set. Emails will be logged to console only.');
+      return null;
+    }
+
+    // Verify connection in background (non-blocking)
+    if (!transporterVerified && transporter) {
+      transporter.verify().then(() => {
+        transporterVerified = true;
+        console.log('[Mail] ✅ SMTP connection verified successfully.');
+      }).catch((err: any) => {
+        console.error('[Mail] ❌ SMTP verification FAILED:', err.message || err);
+        console.error('[Mail] Important: For Gmail, an App Password is required (16 characters). Regular Google account passwords will be rejected.');
+        console.error('[Mail] Generate one at: https://myaccount.google.com/apppasswords');
+        transporter = null;
+      });
     }
   }
   return transporter;
+}
+
+export async function testSmtpConnection(): Promise<{ success: boolean; message: string; details?: any }> {
+  const mailer = getTransporter();
+  if (!mailer) {
+    return {
+      success: false,
+      message: 'Email credentials not configured. Please set EMAIL_USER & EMAIL_PASS (or SMTP_HOST/SMTP_USER/SMTP_PASS) in .env or Render.',
+    };
+  }
+  try {
+    await mailer.verify();
+    return {
+      success: true,
+      message: 'SMTP connection verified successfully! Emails are ready to deliver.',
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: `SMTP verification failed: ${err.message || 'Unknown error'}. Note: Gmail accounts require a 16-character App Password (https://myaccount.google.com/apppasswords).`,
+      details: err.code || err.response || err.message,
+    };
+  }
+}
+
+function getFromAddress(): string {
+  if (config.EMAIL_FROM) return config.EMAIL_FROM;
+  const user = config.SMTP_USER || config.EMAIL_USER;
+  if (user) return `"SyncWave" <${user}>`;
+  return '"SyncWave" <noreply@syncwave.work.gd>';
 }
 
 export async function sendPasswordRecoveryEmail(
@@ -94,7 +147,7 @@ export async function sendPasswordRecoveryEmail(
 
   try {
     const info = await mailer.sendMail({
-      from: `"SyncWave" <${config.EMAIL_USER}>`,
+      from: getFromAddress(),
       to: toEmail,
       subject,
       text,
@@ -144,7 +197,7 @@ export async function sendWelcomeEmail(toEmail: string, displayName: string): Pr
 
   try {
     await mailer.sendMail({
-      from: `"SyncWave" <${config.EMAIL_USER}>`,
+      from: getFromAddress(),
       to: toEmail,
       subject,
       html,
@@ -202,7 +255,7 @@ ${content}
 
   try {
     await mailer.sendMail({
-      from: `"SyncWave Feedback" <${config.EMAIL_USER}>`,
+      from: `"SyncWave Feedback" <${config.EMAIL_USER || 'noreply@syncwave.work.gd'}>`,
       to: ownerEmail,
       replyTo: userEmail,
       subject,

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Maximize2, Minimize2, Settings, Star } from 'lucide-react';
 import { FloatingReactions } from './FloatingReactions';
 import { usePlayerStore } from '../stores/playerStore';
+import { mediaSessionManager } from '../player/MediaSessionManager.js';
 
 declare global {
   interface Window {
@@ -56,6 +57,7 @@ export function YouTubeSyncPlayer({
   const containerId = useRef(`yt-player-${Math.random().toString(36).slice(2, 9)}`).current;
   const playerWrapperRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
+  const silentAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const [isPlayerReady, setIsPlayerReady] = useState(false);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
@@ -71,6 +73,9 @@ export function YouTubeSyncPlayer({
   const keepAliveOscRef = useRef<OscillatorNode | null>(null);
 
   const reactions = usePlayerStore((s) => s.reactions);
+
+  // 1-second inaudible WAV loop to retain mobile OS Audio Focus across iOS & Android screen-locks
+  const SILENT_WAV_URI = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
 
   // 1. Load YouTube Iframe API script once
   useEffect(() => {
@@ -104,10 +109,20 @@ export function YouTubeSyncPlayer({
     };
   }, []);
 
-  // 3. Web Audio Background Keep-Alive for Screen-Off / Hidden Tab
+  // 3. Audio & Web Audio Background Keep-Alive for Screen-Off / Background Tab Playback
   useEffect(() => {
     if (isPlaying && !isLocallyPaused) {
       try {
+        // Start silent HTML5 audio loop to keep audio hardware & networking active
+        if (!silentAudioRef.current) {
+          const aud = new Audio(SILENT_WAV_URI);
+          aud.loop = true;
+          aud.volume = 0.01;
+          silentAudioRef.current = aud;
+        }
+        silentAudioRef.current.play().catch(() => {});
+
+        // Secondary Web Audio oscillator keep-alive
         if (!keepAliveCtxRef.current) {
           const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
           if (AudioCtx) {
@@ -128,6 +143,9 @@ export function YouTubeSyncPlayer({
         }
       } catch {}
     } else {
+      if (silentAudioRef.current) {
+        silentAudioRef.current.pause();
+      }
       if (keepAliveOscRef.current) {
         try {
           keepAliveOscRef.current.stop();
@@ -138,14 +156,31 @@ export function YouTubeSyncPlayer({
     }
 
     const handleVisibility = () => {
-      if (document.hidden && isPlaying && !isLocallyPaused) {
-        if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
+      if (document.hidden) {
+        // Mobile screen locked or tab switched: ensure audio session persists
+        if (isPlaying && !isLocallyPaused) {
+          silentAudioRef.current?.play().catch(() => {});
+          if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
+            try {
+              playerRef.current.playVideo();
+            } catch {}
+          }
+        }
+      } else {
+        // Mobile screen turned back on: restore web audio and sync position
+        if (keepAliveCtxRef.current?.state === 'suspended') {
+          keepAliveCtxRef.current.resume().catch(() => {});
+        }
+        if (isPlaying && !isLocallyPaused && playerRef.current) {
           try {
+            const expectedSec = getExpectedSeconds();
+            const curSec = typeof playerRef.current.getCurrentTime === 'function' ? playerRef.current.getCurrentTime() : 0;
+            if (Math.abs(curSec - expectedSec) > 1.5) {
+              playerRef.current.seekTo(expectedSec, true);
+            }
             playerRef.current.playVideo();
           } catch {}
         }
-      } else if (!document.hidden && keepAliveCtxRef.current?.state === 'suspended') {
-        keepAliveCtxRef.current.resume().catch(() => {});
       }
     };
 
@@ -203,6 +238,40 @@ export function YouTubeSyncPlayer({
             setIsPlayerReady(true);
             setAutoplayBlocked(false);
 
+            // Enable picture-in-picture and background playback on iframe
+            try {
+              const iframe = event.target.getIframe?.();
+              if (iframe) {
+                iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; accelerometer; clipboard-write; gyroscope');
+                iframe.setAttribute('allowfullscreen', '1');
+              }
+            } catch {}
+
+            // Register with mobile OS lock-screen MediaSession
+            try {
+              mediaSessionManager.updateMetadata({
+                title: title || 'YouTube Live Sync',
+                artist: 'YouTube Watch Party • SyncWave',
+                artworkUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+              });
+              mediaSessionManager.setCallbacks({
+                onPlay: () => {
+                  if (canControl) onPlay?.();
+                  else event.target.playVideo();
+                },
+                onPause: () => {
+                  if (canControl) onPause?.();
+                  else event.target.pauseVideo();
+                },
+                onSeek: (posMs) => {
+                  _onSeek?.(posMs);
+                },
+                onNext: () => {
+                  onEnded?.();
+                },
+              });
+            } catch {}
+
             const expected = getExpectedSeconds();
             isSyncingProgrammatically.current = true;
             try {
@@ -226,6 +295,14 @@ export function YouTubeSyncPlayer({
             } else if (event.data === 1 && canControl && !isPlaying) {
               onPlay?.();
             } else if (event.data === 2 && canControl && isPlaying) {
+              // Screen lock / tab switch on mobile automatically causes YouTube iframe to pause.
+              // Crucial: do NOT pause the room for everyone! Keep playing audio.
+              if (document.hidden) {
+                try {
+                  event.target.playVideo();
+                } catch {}
+                return;
+              }
               onPause?.();
             }
           },
@@ -300,6 +377,14 @@ export function YouTubeSyncPlayer({
         const curSec = player.getCurrentTime() || 0;
         const durSec = (typeof player.getDuration === 'function' ? player.getDuration() : 0) || 0;
         onTimeUpdate?.(curSec * 1000, durSec * 1000);
+
+        if (durSec > 0) {
+          mediaSessionManager.updatePositionState({
+            durationMs: durSec * 1000,
+            positionMs: curSec * 1000,
+            playbackRate: 1.0,
+          });
+        }
 
         if (isPlaying && !isLocallyPaused && !isSyncingProgrammatically.current) {
           const expectedSec = getExpectedSeconds();
@@ -387,7 +472,7 @@ export function YouTubeSyncPlayer({
 
       {/* Top Banner Header */}
       {title && (
-        <div className="absolute top-0 inset-x-0 bg-gradient-to-b from-black/85 via-black/40 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-30">
+        <div className="absolute top-0 inset-x-0 bg-gradient-to-b from-black/85 via-black/40 to-transparent p-3 sm:p-4 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity pointer-events-none z-30">
           <div className="flex items-center gap-2">
             <span className="text-red-500 text-xs sm:text-sm font-bold flex items-center gap-1">
               ▶ YouTube Live Sync
@@ -398,7 +483,7 @@ export function YouTubeSyncPlayer({
       )}
 
       {/* Interactive Floating Action Bar (Top Right) */}
-      <div className="absolute top-3 right-3 flex items-center gap-2 z-40 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="absolute top-3 right-3 flex items-center gap-2 z-40 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
         {/* Quality Selector */}
         <div className="relative">
           <button

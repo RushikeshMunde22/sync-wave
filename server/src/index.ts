@@ -82,9 +82,10 @@ app.use(helmet({
         'https://pagead2.googlesyndication.com',
         'https://partner.googleadservices.com',
         'https://tpc.googlesyndication.com',
-        'https://www.googletagservices.com'
+        'https://www.googletagservices.com',
+        'https://accounts.google.com/gsi/client',
       ],
-      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://accounts.google.com/gsi/style'],
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       imgSrc: [
         "'self'", 
@@ -97,7 +98,8 @@ app.use(helmet({
         'https://googleads.g.doubleclick.net',
         'https://*.doubleclick.net',
         'https://*.google.com',
-        'https://*.googlesyndication.com'
+        'https://*.googlesyndication.com',
+        'https://*.googleusercontent.com',
       ],
       mediaSrc: ["'self'", 'https:', 'blob:', 'data:'],
       connectSrc: [
@@ -116,7 +118,9 @@ app.use(helmet({
         'https://hls-server.vercel.app',
         'https://pagead2.googlesyndication.com',
         'https://googleads.g.doubleclick.net',
-        'https://tpc.googlesyndication.com'
+        'https://tpc.googlesyndication.com',
+        'https://accounts.google.com',
+        'https://oauth2.googleapis.com',
       ],
       frameSrc: [
         "'self'", 
@@ -125,7 +129,8 @@ app.use(helmet({
         'https://googleads.g.doubleclick.net',
         'https://tpc.googlesyndication.com',
         'https://www.google.com',
-        'https://pagead2.googlesyndication.com'
+        'https://pagead2.googlesyndication.com',
+        'https://accounts.google.com',
       ],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],

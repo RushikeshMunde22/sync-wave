@@ -3,6 +3,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { BrandLogo } from '../../components/BrandLogo';
+import { GoogleLoginButton } from '../../components/auth/GoogleLoginButton';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -105,11 +106,24 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-white hover:bg-neutral-100 text-[#03050a] rounded-xl py-3.5 font-bold text-sm shadow-[0_0_25px_rgba(255,255,255,0.25)] hover:shadow-[0_0_35px_rgba(255,255,255,0.4)] transition-all disabled:opacity-50 mt-2"
+            className="w-full bg-white hover:bg-neutral-100 text-[#03050a] rounded-xl py-3.5 font-bold text-sm shadow-[0_0_25px_rgba(255,255,255,0.25)] hover:shadow-[0_0_35px_rgba(255,255,255,0.4)] transition-all disabled:opacity-50 mt-2 cursor-pointer"
           >
             {isLoading ? 'Signing In...' : 'Sign In'}
           </button>
         </form>
+
+        {/* Google One-Click Login */}
+        <div className="mt-5 space-y-3">
+          <div className="relative flex items-center justify-center">
+            <div className="border-t border-white/10 w-full" />
+            <span className="bg-[#070b16] px-3 text-[11px] font-semibold text-neutral-400 uppercase tracking-wider relative">
+              Or Continue With
+            </span>
+            <div className="border-t border-white/10 w-full" />
+          </div>
+
+          <GoogleLoginButton text="signin_with" />
+        </div>
 
         {/* Quick Join without account */}
         <div className="mt-6 pt-6 border-t border-white/[0.08]">
