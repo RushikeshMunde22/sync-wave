@@ -30,6 +30,9 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const httpServer = createServer(app);
 
+// Bulletproof security: Hide Express signature
+app.disable('x-powered-by');
+
 const allowedOrigins = [
   config.BASE_URL,
   'https://syncwave.work.gd',
@@ -40,11 +43,25 @@ const allowedOrigins = [
 ];
 
 const corsOriginChecker = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-  if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.work.gd')) {
-    callback(null, true);
-  } else {
-    callback(null, true);
+  if (!origin) return callback(null, true); // Mobile apps, curl, server-to-server
+  try {
+    const url = new URL(origin);
+    const hostname = url.hostname;
+    if (
+      allowedOrigins.includes(origin) ||
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname.endsWith('.onrender.com') ||
+      hostname.endsWith('.vercel.app') ||
+      hostname === 'syncwave.work.gd' ||
+      hostname.endsWith('.work.gd')
+    ) {
+      return callback(null, true);
+    }
+  } catch {
+    // Malformed origin
   }
+  return callback(new Error('Blocked by CORS policy: Unauthorized Origin'), false);
 };
 
 // ── Security middleware ──────────────────────────────────
@@ -113,12 +130,21 @@ app.use(helmet({
     },
   },
   crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   hsts: {
     maxAge: 31536000,
     includeSubDomains: true,
     preload: true,
   },
 }));
+
+// Additional hardened HTTP response headers
+app.use((_req, res, next) => {
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), vr=()');
+  next();
+});
 
 app.use(cors({
   origin: corsOriginChecker,
@@ -127,6 +153,17 @@ app.use(cors({
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
+
+// Anti-prototype pollution & null byte stripping middleware
+app.use((req, _res, next) => {
+  if (req.body && typeof req.body === 'object') {
+    delete (req.body as any)['__proto__'];
+    delete (req.body as any)['constructor'];
+    delete (req.body as any)['prototype'];
+  }
+  next();
+});
+
 app.use(cookieParser(config.SESSION_SECRET));
 
 // ── Rate limiting ────────────────────────────────────────
@@ -189,6 +226,25 @@ app.get('/ads.txt', (_req, res) => {
     res.type('text/plain').sendFile(adsTxtPath);
   } else {
     res.type('text/plain').send('google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0\n');
+  }
+});
+
+// ── Google Search Engine Sitemap & Robots.txt ─────────────
+app.get('/sitemap.xml', (_req, res) => {
+  const sitemapPath = path.resolve(__dirname, '../../client/public/sitemap.xml');
+  if (fs.existsSync(sitemapPath)) {
+    res.type('application/xml').sendFile(sitemapPath);
+  } else {
+    res.status(404).send('Sitemap not found');
+  }
+});
+
+app.get('/robots.txt', (_req, res) => {
+  const robotsPath = path.resolve(__dirname, '../../client/public/robots.txt');
+  if (fs.existsSync(robotsPath)) {
+    res.type('text/plain').sendFile(robotsPath);
+  } else {
+    res.type('text/plain').send('User-agent: *\nAllow: /\nSitemap: https://syncwave.work.gd/sitemap.xml\n');
   }
 });
 

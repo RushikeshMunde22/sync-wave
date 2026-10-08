@@ -66,7 +66,7 @@ export const AdSenseSlot: React.FC<AdSenseSlotProps> = ({
   }
 
   return (
-    <div className={`my-4 overflow-hidden rounded-xl border border-neutral-800/60 bg-black/40 p-2 ${className}`}>
+    <div className={`my-4 overflow-hidden rounded-xl border border-neutral-800/60 bg-black/40 p-2 min-h-[90px] ${className}`}>
       {label && (
         <span className="text-[9px] font-mono tracking-widest uppercase text-neutral-600 block mb-1 text-center">
           {label}

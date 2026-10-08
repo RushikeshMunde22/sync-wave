@@ -1,0 +1,20 @@
+# Robots.txt for SyncWave - https://syncwave.work.gd
+User-agent: *
+Allow: /
+Allow: /landing
+Allow: /about
+Allow: /faq
+Allow: /contact
+Allow: /dmca
+Allow: /privacy
+Allow: /terms
+Allow: /ads.txt
+
+# Disallow private user states and authenticated API endpoints
+Disallow: /api/
+Disallow: /admin/
+Disallow: /room/
+Disallow: /profile
+
+# Search Engine Sitemap Location
+Sitemap: https://syncwave.work.gd/sitemap.xml

@@ -2,20 +2,97 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/png" href="/logo-star-white.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#050811" />
-    <meta name="description" content="Create a listening room, share one group code and hear the same music at the same moment. Free, unlimited room size." />
-    <meta property="og:title" content="Sync Wave — Listen to the same song together, for free" />
-    <meta property="og:description" content="Create a listening room, share one group code and hear the same music at the same moment. Free, unlimited room size." />
+    <meta name="color-scheme" content="dark" />
+
+    <!-- Search Engine Optimization (SEO) Metadata -->
+    <title>SyncWave — Listen to Music Together in Real-Time | Synced YouTube Watch Party</title>
+    <meta name="description" content="Experience real-time synchronized music and YouTube video watch parties with friends worldwide. Stream 320kbps studio audio, sing along with live synchronized lyrics, and host zero-drift rooms." />
+    <meta name="keywords" content="listen together, synchronized music, youtube watch party, sync music with friends, sync audio online, virtual listening room, listen to songs together, sync wave, shared music player, watch youtube in sync, social audio" />
+    <meta name="author" content="Rushikesh Munde" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <link rel="canonical" href="https://syncwave.work.gd/" />
+
+    <!-- Open Graph / Facebook / WhatsApp -->
     <meta property="og:type" content="website" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:site_name" content="SyncWave" />
+    <meta property="og:title" content="SyncWave — Listen to Music Together in Real-Time" />
+    <meta property="og:description" content="Stream 320kbps audio, watch synced YouTube videos, and experience music simultaneously with friends across any device in the world." />
+    <meta property="og:url" content="https://syncwave.work.gd/" />
+    <meta property="og:image" content="https://syncwave.work.gd/logo-full-white.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="SyncWave Social Audio Platform" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="SyncWave — Listen to Music Together in Real-Time" />
+    <meta name="twitter:description" content="Stream 320kbps audio, watch synced YouTube videos, and sing along with live lyrics together in real time." />
+    <meta name="twitter:image" content="https://syncwave.work.gd/logo-full-white.png" />
+
+    <!-- PWA & Mobile Web App -->
     <link rel="manifest" href="/manifest.json" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SyncWave" />
+
+    <!-- Performance Preconnects -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet" />
+
     <!-- Google AdSense Integration: Replace ca-pub-XXXXXXXXXXXXXXXX with your AdSense Publisher ID -->
     <!-- <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script> -->
-    <title>Sync Wave — Listen to the same song together, for free</title>
+
+    <!-- Schema.org JSON-LD Structured Data for Google Rich Snippets -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebApplication",
+          "@id": "https://syncwave.work.gd/#app",
+          "name": "SyncWave",
+          "url": "https://syncwave.work.gd",
+          "applicationCategory": "MultimediaApplication",
+          "operatingSystem": "All (Web, iOS, Android, Windows, macOS, Linux)",
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+          },
+          "description": "Real-time synchronized audio and YouTube video platform enabling simultaneous music streaming with friends worldwide.",
+          "featureList": [
+            "Real-time NTP-style clock synchronization",
+            "Lossless 320kbps audio streaming",
+            "Synchronized YouTube video watch parties with live emoji reactions",
+            "Spotify-style synchronized lyrics",
+            "WhatsApp-style group admin permissions and member song request queues",
+            "Cross-device mobile background playback resilience"
+          ]
+        },
+        {
+          "@type": "Organization",
+          "@id": "https://syncwave.work.gd/#org",
+          "name": "SyncWave",
+          "url": "https://syncwave.work.gd",
+          "logo": "https://syncwave.work.gd/logo-full-white.png",
+          "founder": {
+            "@type": "Person",
+            "name": "Rushikesh Munde"
+          },
+          "contactPoint": {
+            "@type": "ContactPoint",
+            "contactType": "customer support",
+            "email": "munderushikesh66@gmail.com"
+          }
+        }
+      ]
+    }
+    </script>
   </head>
   <body class="bg-[#050811] text-white antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
     <div id="root"></div>

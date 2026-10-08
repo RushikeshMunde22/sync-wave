@@ -27,6 +27,11 @@ import AdminPromotions from './pages/admin/AdminPromotions';
 import JoinGroupPage from './pages/JoinGroupPage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 import TermsPage from './pages/TermsPage';
+import AboutPage from './pages/AboutPage';
+import FAQPage from './pages/FAQPage';
+import ContactPage from './pages/ContactPage';
+import DMCAPage from './pages/DMCAPage';
+import { CookieConsent } from './components/CookieConsent';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthStore();
@@ -98,6 +103,10 @@ export default function App() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/terms" element={<TermsPage />} />
+        <Route path="/about" element={<AboutPage />} />
+        <Route path="/faq" element={<FAQPage />} />
+        <Route path="/contact" element={<ContactPage />} />
+        <Route path="/dmca" element={<DMCAPage />} />
         
         {/* Admin Routes strictly guarded against URL manipulation */}
         <Route
@@ -127,6 +136,7 @@ export default function App() {
         
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <CookieConsent />
     </BrowserRouter>
   );
 }

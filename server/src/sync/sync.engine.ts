@@ -624,6 +624,18 @@ export class SyncEngine {
   private persistState(groupId: string, state: PlaybackState): void {
     try {
       const db = getDb();
+      // Verify group still exists before inserting to prevent foreign key errors on deleted/empty rooms
+      const groupExists = db.prepare('SELECT 1 FROM groups WHERE id = ?').get(groupId);
+      if (!groupExists) {
+        this.playbackStates.delete(groupId);
+        this.queues.delete(groupId);
+        this.clearTrackEndTimer(groupId);
+        this.songRequests.delete(groupId);
+        this.presence.delete(groupId);
+        this.skipVotes.delete(groupId);
+        return;
+      }
+
       db.prepare(`
         INSERT INTO playback_state (group_id, track_id, is_playing, position_ms, updated_at_server_ms, version, controlled_by)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -643,7 +655,16 @@ export class SyncEngine {
         state.version,
         state.controlledBy
       );
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
+        this.playbackStates.delete(groupId);
+        this.queues.delete(groupId);
+        this.clearTrackEndTimer(groupId);
+        this.songRequests.delete(groupId);
+        this.presence.delete(groupId);
+        this.skipVotes.delete(groupId);
+        return;
+      }
       console.error('Failed to persist playback state to DB:', err);
     }
   }

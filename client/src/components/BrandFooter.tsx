@@ -8,9 +8,9 @@ export function BrandFooter() {
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-10 items-start">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-10 items-start">
           {/* Brand Info */}
-          <div className="md:col-span-2 space-y-4">
+          <div className="sm:col-span-2 space-y-4">
             <div className="inline-block">
               <BrandLogo size="md" />
             </div>
@@ -45,6 +45,33 @@ export function BrandFooter() {
               <li>
                 <Link to="/admin" className="hover:text-white transition-colors flex items-center gap-2">
                   <Shield size={13} className="text-emerald-400" /> Admin Console
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          {/* Platform & Guides */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-white">Resources & Info</h4>
+            <ul className="space-y-2 text-xs">
+              <li>
+                <Link to="/about" className="hover:text-white transition-colors">
+                  About SyncWave
+                </Link>
+              </li>
+              <li>
+                <Link to="/faq" className="hover:text-white transition-colors">
+                  Frequently Asked Questions
+                </Link>
+              </li>
+              <li>
+                <Link to="/contact" className="hover:text-white transition-colors">
+                  Contact & Support
+                </Link>
+              </li>
+              <li>
+                <Link to="/dmca" className="hover:text-white transition-colors">
+                  DMCA & Copyright Policy
                 </Link>
               </li>
             </ul>
