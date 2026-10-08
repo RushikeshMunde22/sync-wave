@@ -12,7 +12,7 @@ export interface Group {
   membersCanControl: boolean;
   maxMembers: number;
   theme: string;
-  mediaMode: 'music' | 'video' | 'both';
+  mediaMode: 'music' | 'video' | 'both' | 'shorts';
   isClosed: boolean;
   createdAt: string;
 }
@@ -55,7 +55,7 @@ export const generateInviteCode = (): string => {
 export const createGroup = async (
   ownerId: string, 
   name: string, 
-  options?: { maxMembers?: number; theme?: string; mediaMode?: 'music' | 'video' | 'both' }
+  options?: { maxMembers?: number; theme?: string; mediaMode?: 'music' | 'video' | 'both' | 'shorts' }
 ): Promise<Group> => {
   const db = getDb();
   const groupId = uuidv4();
@@ -504,7 +504,7 @@ function mapGroupDbToModel(row: any): Group {
     membersCanControl: Boolean(row.members_can_control),
     maxMembers: Number(row.max_members) || 50,
     theme: row.theme || 'default',
-    mediaMode: (row.media_mode as 'music' | 'video' | 'both') || 'music',
+    mediaMode: (row.media_mode as 'music' | 'video' | 'both' | 'shorts') || 'music',
     isClosed: Boolean(row.is_closed),
     createdAt: row.created_at
   };

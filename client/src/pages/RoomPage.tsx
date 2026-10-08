@@ -10,6 +10,7 @@ import { api } from '../lib/api.js';
 import { FloatingReactions } from '../components/FloatingReactions';
 import { RoomMembersModal } from '../components/RoomMembersModal';
 import { YouTubeSyncPlayer } from '../components/YouTubeSyncPlayer';
+import { YouTubeShortsPlayer } from '../components/YouTubeShortsPlayer';
 import { AddToPlaylistModal } from '../components/AddToPlaylistModal';
 
 const ALLOWED_EMOJIS = ['❤️', '🔥', '😂', '😮', '👏', '🎶', '😭', '🙌'];
@@ -209,7 +210,11 @@ export default function RoomPage() {
       }
     });
 
-    socket.on('room:deleted', () => {
+    socket.on('room:deleted', (data?: any) => {
+      audioEngine.stop();
+      resetRoom();
+      const reason = data?.reason || 'This room has been closed and deleted by the host.';
+      alert(`Room Closed: ${reason}`);
       navigate('/', { replace: true });
     });
 
@@ -380,6 +385,13 @@ export default function RoomPage() {
     setErrorMessage(null);
     socket.emit('playback:load-track', { groupId: id, trackId: track.id });
     setShowQueueModal(false);
+  };
+
+  const handlePlayShort = (short: { videoId: string; title: string; channel: string }) => {
+    if (!socket || !id) return;
+    setErrorMessage(null);
+    const trackId = `youtube:${short.videoId}`;
+    socket.emit('playback:load-track', { groupId: id, trackId });
   };
 
   const handleAddToQueue = (track: any) => {
@@ -701,8 +713,18 @@ export default function RoomPage() {
 
       {/* Main Room View */}
       <main className="z-10 flex-1 flex flex-col items-center justify-center p-6 max-w-xl mx-auto w-full">
-        {/* Track Artwork or Synchronized YouTube Video Player */}
-        {isVideoTrack && activeVideoId ? (
+        {/* YouTube Shorts Player Mode or Synchronized Video or Track Artwork */}
+        {roomState?.mediaMode === 'shorts' ? (
+          <div className="w-full flex justify-center py-2">
+            <YouTubeShortsPlayer
+              videoId={activeVideoId || 'dQw4w9WgXcQ'}
+              isPlaying={playback.isPlaying}
+              canControl={canControlPlayback}
+              onPlayShort={handlePlayShort}
+              onSendReaction={handleSendReaction}
+            />
+          </div>
+        ) : isVideoTrack && activeVideoId ? (
           <div className="w-full">
             <YouTubeSyncPlayer
               videoId={activeVideoId}

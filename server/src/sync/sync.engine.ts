@@ -44,6 +44,12 @@ export function getTrackInfo(trackId: string): TrackInfo | undefined {
   }
 }
 
+let syncEngineInstance: SyncEngine | null = null;
+
+export function getSyncEngine(): SyncEngine | null {
+  return syncEngineInstance;
+}
+
 export class SyncEngine {
   private groupLocks = new Map<string, Promise<void>>();
   private playbackStates = new Map<string, PlaybackState>();
@@ -54,7 +60,19 @@ export class SyncEngine {
   private emptyGroupTimers = new Map<string, NodeJS.Timeout>();
   private songRequests = new Map<string, SongRequest[]>();
 
-  constructor(private io: SocketIOServer<ClientToServerEvents, ServerToClientEvents>) {}
+  constructor(private io: SocketIOServer<ClientToServerEvents, ServerToClientEvents>) {
+    syncEngineInstance = this;
+  }
+
+  clearRoom(groupId: string): void {
+    this.playbackStates.delete(groupId);
+    this.queues.delete(groupId);
+    this.songRequests.delete(groupId);
+    this.presence.delete(groupId);
+    this.skipVotes.delete(groupId);
+    this.clearTrackEndTimer(groupId);
+    this.cancelEmptyRoomDeletion(groupId);
+  }
 
   init(): void {
     try {

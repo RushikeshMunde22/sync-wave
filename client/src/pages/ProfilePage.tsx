@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Sparkles, Film } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { api } from '../lib/api';
 import { PromotionalBanner } from '../components/PromotionalBanner';
@@ -16,11 +16,39 @@ interface Playlist {
 
 export default function ProfilePage() {
   const { user, updateProfile, logout } = useAuthStore();
+  const navigate = useNavigate();
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [emoji, setEmoji] = useState(user?.avatarEmoji || '🎵');
   const [color, setColor] = useState(user?.avatarColor || '#6366f1');
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState('');
+
+  // Beta YouTube Shorts Room State
+  const [creatingShortsRoom, setCreatingShortsRoom] = useState(false);
+  const [shortsRoomName, setShortsRoomName] = useState('');
+  const [showShortsModal, setShowShortsModal] = useState(false);
+
+  const handleCreateShortsRoom = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    try {
+      setCreatingShortsRoom(true);
+      const name = shortsRoomName.trim() || `${user?.displayName || 'My'} Shorts Lounge`;
+      const res = await api.post('/api/groups', {
+        name,
+        mediaMode: 'shorts',
+        theme: 'cyberwave',
+      });
+      const newGroupId = res.data?.id;
+      if (newGroupId) {
+        navigate(`/room/${newGroupId}`);
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.error || err.message || 'Failed to create YouTube Shorts room');
+    } finally {
+      setCreatingShortsRoom(false);
+      setShowShortsModal(false);
+    }
+  };
 
   // Feedback State
   const [feedbackContent, setFeedbackContent] = useState('');
@@ -553,6 +581,86 @@ export default function ProfilePage() {
             </button>
           </div>
         </section>
+
+        {/* ✨ Beta Version Specially for You: YouTube Shorts Watch Party */}
+        <section className="bg-gradient-to-br from-red-950/40 via-purple-950/30 to-neutral-900 rounded-3xl p-6 sm:p-8 border border-red-500/30 shadow-2xl relative overflow-hidden space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+            <div className="space-y-1.5">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-600/20 border border-red-500/40 text-red-300 text-xs font-bold uppercase tracking-wider">
+                <Sparkles className="w-3.5 h-3.5 text-red-400" /> Beta Feature • Specially For You
+              </div>
+              <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+                <span>🎬</span> Try the Beta Version: YouTube Shorts Party
+              </h2>
+              <p className="text-xs sm:text-sm text-neutral-300 max-w-xl leading-relaxed">
+                Experience synchronized vertical YouTube Shorts reels! Swipe, scroll, and enjoy viral video trends in real-time with your friends. Only room host & authorized DJs control scrolling.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowShortsModal(true)}
+              className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-purple-600 hover:from-red-500 hover:to-purple-500 text-white font-bold text-sm shadow-xl shadow-red-600/30 hover:shadow-red-600/50 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer whitespace-nowrap"
+            >
+              <Film className="w-4 h-4" /> Try Beta Shorts Room →
+            </button>
+          </div>
+        </section>
+
+        {/* Beta Shorts Room Creation Modal */}
+        {showShortsModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-md bg-neutral-900 rounded-3xl p-6 border border-white/10 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-lg font-bold text-white flex items-center gap-2">
+                  <span>🎬</span> Create YouTube Shorts Room
+                </h4>
+                <button
+                  onClick={() => setShowShortsModal(false)}
+                  className="text-neutral-400 hover:text-white p-1 text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <p className="text-xs text-neutral-400 leading-relaxed">
+                Creates a synchronized 9:16 vertical reels watch room with your room code. You and authorized members can scroll through viral Shorts in real-time!
+              </p>
+
+              <form onSubmit={handleCreateShortsRoom} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-1">
+                    Room Name
+                  </label>
+                  <input
+                    type="text"
+                    value={shortsRoomName}
+                    onChange={(e) => setShortsRoomName(e.target.value)}
+                    placeholder={`${user?.displayName || 'My'} Shorts Lounge`}
+                    maxLength={50}
+                    className="w-full bg-neutral-950 border border-white/10 rounded-xl px-4 py-3 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-red-500/50"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowShortsModal(false)}
+                    className="px-4 py-2 rounded-xl text-xs text-neutral-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creatingShortsRoom}
+                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold text-xs shadow-lg shadow-red-600/30 disabled:opacity-50 cursor-pointer"
+                  >
+                    {creatingShortsRoom ? 'Creating Room...' : 'Launch Shorts Room →'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="-mx-4 sm:-mx-6 lg:-mx-8">

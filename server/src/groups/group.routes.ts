@@ -3,6 +3,7 @@ import { requireAuth } from '../auth/auth.middleware.js';
 import { requireGroupMember, requireGroupAdmin, requireGroupOwner } from './group.middleware.js';
 import * as GroupService from './group.service.js';
 import { createGroupSchema, joinGroupSchema, updateGroupSchema, memberActionSchema, inviteActionSchema, importPlaylistSchema } from './group.schemas.js';
+import { getSyncEngine } from '../sync/sync.engine.js';
 
 const router = Router();
 
@@ -88,7 +89,19 @@ router.put('/:id', requireAuth, requireGroupMember, requireGroupAdmin, async (re
 // Delete group
 router.delete('/:id', requireAuth, requireGroupMember, requireGroupOwner, async (req, res, next) => {
   try {
-    await GroupService.deleteGroup(req.user!.id, req.params.id as string);
+    const groupId = req.params.id as string;
+    await GroupService.deleteGroup(req.user!.id, groupId);
+
+    // Broadcast room:deleted so all connected members leave immediately
+    const io = req.app.get('io');
+    if (io) {
+      io.to(groupId).emit('room:deleted', { groupId, reason: 'Room was closed and deleted by the host.' });
+    }
+    const engine = getSyncEngine();
+    if (engine) {
+      engine.clearRoom(groupId);
+    }
+
     res.status(200).json({ message: 'Group deleted successfully' });
   } catch (error) {
     next(error);

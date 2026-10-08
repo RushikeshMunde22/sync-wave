@@ -40,8 +40,8 @@ const configSchema = z.object({
   BASE_URL: z.string().optional().transform(v => (!v || !v.startsWith('http')) ? 'http://localhost:3000' : v),
   DATA_DIR: z.string().default('./data'),
   
-  ADMIN_EMAIL: z.string().email(),
-  ADMIN_INITIAL_PASSWORD: z.string().min(10, 'ADMIN_INITIAL_PASSWORD must be at least 10 characters'),
+  ADMIN_EMAIL: z.string().email().default('admin@syncwave.local'),
+  ADMIN_INITIAL_PASSWORD: z.string().min(10, 'ADMIN_INITIAL_PASSWORD must be at least 10 characters').default('supersecurepassword123'),
   
   JAMENDO_CLIENT_ID: z.string().optional(),
   

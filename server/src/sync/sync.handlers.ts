@@ -157,6 +157,7 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
 
         engine.addMember(groupId, presence);
         socket.to(groupId).emit('room:member-joined', { member: presence });
+        io.to(groupId).emit('room:members-updated', { members: engine.getMembers(groupId) });
 
         const playback = engine.getPlaybackState(groupId);
         const queue = engine.getQueue(groupId);
@@ -190,6 +191,7 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
         userRooms.delete(groupId);
         engine.removeMember(groupId, user.id);
         socket.to(groupId).emit('room:member-left', { userId: user.id });
+        io.to(groupId).emit('room:members-updated', { members: engine.getMembers(groupId) });
       } catch (err) { }
     });
 
@@ -397,6 +399,7 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
       for (const gId of userRooms) {
         engine.removeMember(gId, user.id);
         socket.to(gId).emit('room:member-left', { userId: user.id });
+        io.to(gId).emit('room:members-updated', { members: engine.getMembers(gId) });
       }
       userRooms.clear();
     });

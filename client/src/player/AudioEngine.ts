@@ -43,7 +43,6 @@ export class AudioEngine {
   private autoplayBlocked: boolean = false;
   private callbacks: AudioEngineCallbacks = {};
   private keepAliveCtx: AudioContext | null = null;
-  private keepAliveOsc: OscillatorNode | null = null;
 
   private constructor() {
     this.audio = new Audio();
@@ -75,35 +74,10 @@ export class AudioEngine {
   }
 
   private startKeepAlive(): void {
-    try {
-      if (!this.keepAliveCtx) {
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        if (!AudioCtx) return;
-        this.keepAliveCtx = new AudioCtx();
-      }
-      if (this.keepAliveCtx.state === 'suspended') {
-        this.keepAliveCtx.resume().catch(() => {});
-      }
-      if (!this.keepAliveOsc) {
-        const osc = this.keepAliveCtx.createOscillator();
-        const gain = this.keepAliveCtx.createGain();
-        gain.gain.value = 0.00001; // inaudible keep-alive signal
-        osc.connect(gain);
-        gain.connect(this.keepAliveCtx.destination);
-        osc.start();
-        this.keepAliveOsc = osc;
-      }
-    } catch {}
+    // HTML5 <audio> element directly commands native audio focus and MediaSession.
   }
 
   private stopKeepAlive(): void {
-    try {
-      if (this.keepAliveOsc) {
-        this.keepAliveOsc.stop();
-        this.keepAliveOsc.disconnect();
-        this.keepAliveOsc = null;
-      }
-    } catch {}
   }
 
   public static getInstance(): AudioEngine {
@@ -354,7 +328,7 @@ export class AudioEngine {
     if (this.driftTimer) return;
     this.driftTimer = setInterval(() => {
       this.performDriftCheck();
-    }, 400);
+    }, 1000);
   }
 
   private stopDriftLoop(): void {
@@ -365,10 +339,10 @@ export class AudioEngine {
   }
 
   /**
-   * Tight Multi-Device Drift Correction Algorithm:
-   * Tier 1: |drift| < 40ms -> In tight sync, rate = 1.0
-   * Tier 2: 40ms <= |drift| <= 300ms -> Smooth micro-adjust (1.04x if behind, 0.96x if ahead)
-   * Tier 3: |drift| > 300ms -> Immediate hard snap to expected position, restore rate = 1.0
+   * Smooth Multi-Device Drift Correction:
+   * Tier 1: |drift| < 100ms -> In sync deadband, playbackRate = 1.0 (no audio artifacts)
+   * Tier 2: 100ms <= |drift| <= 1800ms -> Gentle pitch-preserved micro-adjust (1.025x if behind, 0.975x if ahead)
+   * Tier 3: |drift| > 1800ms -> Hard snap to expected position, restore rate = 1.0
    */
   public performDriftCheck(): void {
     if (!this.lastPlaybackState || !this.lastPlaybackState.isPlaying || this.isLocallyPaused || this.audio.paused) {
@@ -380,21 +354,21 @@ export class AudioEngine {
     const driftMs = currentMs - expectedMs;
     const absDriftMs = Math.abs(driftMs);
 
-    if (absDriftMs > 300) {
-      // Tier 3: Immediate hard snap for simultaneous multi-device playback
+    if (absDriftMs > 1800) {
+      // Tier 3: Hard seek only on large discrepancy
       this.audio.currentTime = Math.max(0, expectedMs / 1000);
       this.audio.playbackRate = 1.0;
-    } else if (absDriftMs >= 40) {
-      // Tier 2: Smooth micro-rate adjustment (40ms - 300ms)
+    } else if (absDriftMs >= 100) {
+      // Tier 2: Smooth micro-rate adjustment (100ms - 1800ms)
       if (driftMs < 0) {
         // Audio is behind server -> speed up smoothly
-        this.audio.playbackRate = 1.04;
+        this.audio.playbackRate = 1.025;
       } else {
         // Audio is ahead of server -> slow down smoothly
-        this.audio.playbackRate = 0.96;
+        this.audio.playbackRate = 0.975;
       }
-    } else if (absDriftMs < 20) {
-      // Converged back into exact synchronization
+    } else {
+      // Tier 1: In deadband (< 100ms) - restore normal speed
       if (this.audio.playbackRate !== 1.0) {
         this.audio.playbackRate = 1.0;
       }

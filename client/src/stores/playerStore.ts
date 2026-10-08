@@ -66,7 +66,7 @@ export interface RoomState {
   groupName: string;
   inviteCode?: string;
   theme?: string;
-  mediaMode?: 'music' | 'video' | 'both';
+  mediaMode?: 'music' | 'video' | 'both' | 'shorts';
   playback: PlaybackState;
   queue: QueueItem[];
   members: MemberPresence[];

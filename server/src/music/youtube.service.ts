@@ -25,6 +25,10 @@ export function extractYouTubeVideoId(input: string): string | null {
   const watchMatch = clean.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
   if (watchMatch && watchMatch[1]) return watchMatch[1];
 
+  // Handle youtube.com/shorts/ID
+  const shortsMatch = clean.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/);
+  if (shortsMatch && shortsMatch[1]) return shortsMatch[1];
+
   // Handle youtu.be/ID
   const shortMatch = clean.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
   if (shortMatch && shortMatch[1]) return shortMatch[1];

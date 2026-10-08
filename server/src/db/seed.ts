@@ -31,7 +31,7 @@ export async function seedSuperadmin(): Promise<void> {
         passwordHash,
         'Admin',
         'superadmin',
-        1,
+        0,
         recoveryCodeHash
       );
       
@@ -41,6 +41,10 @@ export async function seedSuperadmin(): Promise<void> {
       console.error('[Seed] Failed to create superadmin:', error);
     }
   } else {
+    // Ensure existing superadmin has force_password_change = 0
+    try {
+      db.prepare('UPDATE users SET force_password_change = 0 WHERE role = ?').run('superadmin');
+    } catch {}
     console.log('[Seed] Superadmin already exists or credentials not provided in config.');
   }
 
@@ -83,24 +87,30 @@ export async function seedSuperadmin(): Promise<void> {
     }
   }
 
-  // Ensure EMAIL_USER has an active superadmin account
-  if (config.EMAIL_USER) {
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(config.EMAIL_USER) as { id: string } | undefined;
+  // Ensure munderushikesh66@gmail.com and config.EMAIL_USER have active superadmin accounts
+  const superadminEmails = Array.from(new Set(['munderushikesh66@gmail.com', config.EMAIL_USER].filter(Boolean) as string[]));
+  for (const adminMail of superadminEmails) {
+    const existing = db.prepare('SELECT id, role FROM users WHERE email = ?').get(adminMail) as { id: string; role: string } | undefined;
     if (!existing) {
-      console.log(`[Seed] Creating superadmin account for ${config.EMAIL_USER}...`);
+      console.log(`[Seed] Creating superadmin account for ${adminMail}...`);
       try {
         const id = uuidv4();
         const pwdHash = await argon2.hash('Password123!');
         const recoveryCode = crypto.randomBytes(16).toString('hex');
         const recoveryCodeHash = await argon2.hash(recoveryCode);
         db.prepare(`
-          INSERT INTO users (id, email, password_hash, display_name, role, recovery_code_hash)
-          VALUES (?, ?, ?, ?, 'superadmin', ?)
-        `).run(id, config.EMAIL_USER, pwdHash, 'Rushikesh (Superadmin)', recoveryCodeHash);
-        console.log(`[Seed] Account created for ${config.EMAIL_USER} with password: Password123!`);
+          INSERT INTO users (id, email, password_hash, display_name, role, force_password_change, recovery_code_hash)
+          VALUES (?, ?, ?, ?, 'superadmin', 0, ?)
+        `).run(id, adminMail, pwdHash, 'Rushikesh (Superadmin)', recoveryCodeHash);
+        console.log(`[Seed] Account created for ${adminMail} with password: Password123!`);
       } catch (err) {
-        console.error('[Seed] Failed to create EMAIL_USER account:', err);
+        console.error(`[Seed] Failed to create ${adminMail} account:`, err);
       }
+    } else if (existing.role !== 'superadmin') {
+      db.prepare('UPDATE users SET role = "superadmin", force_password_change = 0 WHERE id = ?').run(existing.id);
+      console.log(`[Seed] Promoted existing account ${adminMail} to superadmin.`);
+    } else {
+      db.prepare('UPDATE users SET force_password_change = 0 WHERE id = ?').run(existing.id);
     }
   }
 }

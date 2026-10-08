@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BrandLogo } from '../../components/BrandLogo';
 import { GoogleLoginButton } from '../../components/auth/GoogleLoginButton';
+import { TermsModal } from '../../components/TermsModal';
 
 const EMOJI_OPTIONS = ['🎧', '🎵', '⚡', '🔥', '🚀', '✨', '🎸', '🎹'];
 const COLOR_OPTIONS = ['#ffffff', '#e2e8f0', '#94a3b8', '#38bdf8', '#818cf8', '#a855f7', '#ec4899', '#10b981'];
@@ -17,12 +18,18 @@ export default function SignupPage() {
   const [error, setError] = useState('');
   const [recoveryCode, setRecoveryCode] = useState('');
   const [copied, setCopied] = useState(false);
+  const [termsAgreed, setTermsAgreed] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
   const { signup, isLoading } = useAuthStore();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    if (!termsAgreed) {
+      setError('Please read and agree to the Terms of Service & Privacy Policy to create your account.');
+      return;
+    }
     try {
       const res = await signup({ 
         email: email.trim(), 
@@ -170,10 +177,30 @@ export default function SignupPage() {
                 </div>
               </div>
 
+              <div className="flex items-start gap-2.5 pt-1">
+                <input 
+                  type="checkbox"
+                  id="termsCheckbox"
+                  checked={termsAgreed}
+                  onChange={(e) => setTermsAgreed(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-white/20 bg-black/40 text-indigo-500 focus:ring-0 focus:outline-none cursor-pointer accent-indigo-500"
+                />
+                <label htmlFor="termsCheckbox" className="text-xs text-neutral-300 leading-tight select-none cursor-pointer">
+                  I agree to the{' '}
+                  <button
+                    type="button"
+                    onClick={() => setShowTermsModal(true)}
+                    className="text-white underline hover:text-indigo-300 font-medium transition-colors"
+                  >
+                    Terms of Service & Privacy Policy
+                  </button>
+                </label>
+              </div>
+
               <button 
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-white hover:bg-neutral-100 text-[#03050a] rounded-xl py-3.5 font-bold text-sm shadow-[0_0_25px_rgba(255,255,255,0.25)] hover:shadow-[0_0_35px_rgba(255,255,255,0.4)] transition-all disabled:opacity-50 mt-6 cursor-pointer"
+                className="w-full bg-white hover:bg-neutral-100 text-[#03050a] rounded-xl py-3.5 font-bold text-sm shadow-[0_0_25px_rgba(255,255,255,0.25)] hover:shadow-[0_0_35px_rgba(255,255,255,0.4)] transition-all disabled:opacity-50 mt-4 cursor-pointer"
               >
                 {isLoading ? 'Creating Account...' : 'Sign Up Free'}
               </button>
@@ -237,6 +264,12 @@ export default function SignupPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <TermsModal
+        isOpen={showTermsModal}
+        onClose={() => setShowTermsModal(false)}
+        onAccept={() => setTermsAgreed(true)}
+      />
     </div>
   );
 }

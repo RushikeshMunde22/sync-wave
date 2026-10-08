@@ -24,6 +24,7 @@ export interface ServerToClientEvents {
   'room:state': (data: RoomState) => void;
   'room:member-joined': (data: { member: MemberPresence }) => void;
   'room:member-left': (data: { userId: string }) => void;
+  'room:members-updated': (data: { members: MemberPresence[]; action?: string; targetId?: string }) => void;
   'playback:state': (data: PlaybackState) => void;
   'playback:admin-paused': (data: { pausedBy: string; pausedByName: string }) => void;
   'playback:admin-resumed': (data: { resumedBy: string; resumedByName: string }) => void;
@@ -91,7 +92,7 @@ export interface RoomState {
   groupName: string;
   inviteCode?: string;
   theme?: string;
-  mediaMode?: 'music' | 'video' | 'both';
+  mediaMode?: 'music' | 'video' | 'both' | 'shorts';
   playback: PlaybackState;
   queue: QueueItem[];
   members: MemberPresence[];
