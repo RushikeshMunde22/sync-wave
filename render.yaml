@@ -17,7 +17,7 @@ services:
       - key: ADMIN_EMAIL
         value: admin@syncwave.local
       - key: ADMIN_INITIAL_PASSWORD
-        generateValue: true
+        value: supersecurepassword123
     disk:
       name: syncwave-data
       mountPath: /var/data

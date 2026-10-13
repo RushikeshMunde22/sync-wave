@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const signupSchema = z.object({
-  email: z.string().email().max(255),
+  email: z.string().trim().toLowerCase().pipe(z.string().email().max(255)),
   password: z.string().min(10).max(128),
   displayName: z.string().min(1).max(30).trim(),
   avatarEmoji: z.string().emoji().optional(),
@@ -9,17 +9,17 @@ export const signupSchema = z.object({
 });
 
 export const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().toLowerCase().pipe(z.string().email()),
   password: z.string(),
 });
 
 export const forgotPasswordSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().toLowerCase().pipe(z.string().email()),
   recoveryCode: z.string().optional(),
 });
 
 export const resetPasswordSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().toLowerCase().pipe(z.string().email()),
   recoveryCode: z.string(),
   newPassword: z.string().min(10).max(128),
 });

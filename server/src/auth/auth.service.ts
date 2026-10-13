@@ -52,7 +52,7 @@ export async function createUser(data: {
 }): Promise<{ user: User; recoveryCode?: string }> {
   const db = getDb();
   const id = uuidv4();
-  const email = data.email.toLowerCase();
+  const email = data.email.trim().toLowerCase();
   
   let passwordHash = null;
   let recoveryCodePlain = undefined;
@@ -91,7 +91,8 @@ export async function createUser(data: {
 
 export function findUserByEmail(email: string): User | undefined {
   const db = getDb();
-  const row = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(email) as any;
+  const normalizedEmail = email.trim().toLowerCase();
+  const row = db.prepare('SELECT * FROM users WHERE LOWER(TRIM(email)) = ?').get(normalizedEmail) as any;
   if (!row) return undefined;
   return {
     id: row.id,
@@ -125,13 +126,20 @@ export function findUserById(id: string): User | undefined {
 
 export async function verifyLogin(email: string, password: string): Promise<User> {
   const db = getDb();
-  const row = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(email) as any;
-  if (!row || !row.password_hash) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const row = db.prepare('SELECT * FROM users WHERE LOWER(TRIM(email)) = ?').get(normalizedEmail) as any;
+  if (!row) {
+    console.warn(`[Auth] verifyLogin failed: No user found for email "${normalizedEmail}"`);
     throw new Error('Invalid email or password');
+  }
+  if (!row.password_hash) {
+    console.warn(`[Auth] verifyLogin failed: User "${normalizedEmail}" has no password set (OAuth only)`);
+    throw new Error('This account was created with Google. Please sign in with Google or reset your password.');
   }
 
   const valid = await verifyPassword(row.password_hash, password);
   if (!valid) {
+    console.warn(`[Auth] verifyLogin failed: Incorrect password for user "${normalizedEmail}"`);
     throw new Error('Invalid email or password');
   }
 

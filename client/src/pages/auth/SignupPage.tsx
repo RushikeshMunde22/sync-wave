@@ -32,7 +32,7 @@ export default function SignupPage() {
     }
     try {
       const res = await signup({ 
-        email: email.trim(), 
+        email: email.trim().toLowerCase(), 
         password, 
         displayName: displayName.trim(), 
         avatarEmoji: emoji, 

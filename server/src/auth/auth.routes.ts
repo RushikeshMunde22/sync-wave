@@ -28,21 +28,21 @@ const router = Router();
 
 const signupLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5,
+  max: 25,
   validate: { trustProxy: false, xForwardedForHeader: false },
   message: { error: 'Too many signup attempts, please try again later.' }
 });
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 50,
   validate: { trustProxy: false, xForwardedForHeader: false },
   message: { error: 'Too many login attempts, please try again later.' }
 });
 
 const forgotPasswordLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 3,
+  max: 10,
   validate: { trustProxy: false, xForwardedForHeader: false },
   message: { error: 'Too many password reset attempts, please try again later.' }
 });

@@ -16,8 +16,9 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    const cleanEmail = email.trim().toLowerCase();
     try {
-      await login(email, password);
+      await login(cleanEmail, password);
       const currentUser = useAuthStore.getState().user;
       const searchParams = new URLSearchParams(window.location.search);
       const redirectUrl = searchParams.get('redirect');
