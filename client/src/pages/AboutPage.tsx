@@ -57,16 +57,16 @@ export default function AboutPage() {
             <Cpu size={14} /> Technical Architecture
           </div>
           <h2 className="text-2xl sm:text-3xl font-bold text-white font-['Plus_Jakarta_Sans']">
-            Engineered for Sub-Millisecond Synchronization
+            Engineered for Seamless Shared Experiences
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="p-6 rounded-2xl border border-neutral-800 bg-neutral-900/40 space-y-3">
               <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
                 <Zap size={20} />
               </div>
-              <h3 className="text-base font-semibold text-white">NTP-Style Clock Synchronization</h3>
+              <h3 className="text-base font-semibold text-white">Precision Playback Synchronization</h3>
               <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed font-light">
-                SyncWave runs high-frequency round-trip clock sampling between client devices and our edge sync engine, calculating network flight time and dynamic clock offsets to synchronize audio with sub-10ms precision.
+                SyncWave coordinates playback across devices using server-authoritative timestamps, keeping your music and videos aligned across every screen.
               </p>
             </div>
 

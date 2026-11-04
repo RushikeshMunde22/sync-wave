@@ -19,7 +19,7 @@ export function BrandFooter() {
             </p>
             <div className="flex items-center gap-2 text-[11px] text-neutral-500 pt-1">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Studio Engine Active • Domain: syncwave.work.gd</span>
+              <span>SyncWave • Watch & listen together, perfectly in sync</span>
             </div>
           </div>
 

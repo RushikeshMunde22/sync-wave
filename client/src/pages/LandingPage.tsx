@@ -140,7 +140,7 @@ export default function LandingPage() {
             {/* Live badge */}
             <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/[0.04] border border-white/10 text-white text-xs font-medium tracking-wide backdrop-blur-md shadow-inner">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-              <span className="text-neutral-300">Free Music Listening • Millisecond Group Sync</span>
+              <span className="text-neutral-300">Watch & listen together, perfectly in sync</span>
             </div>
 
             <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-white leading-[1.08]">
@@ -148,7 +148,7 @@ export default function LandingPage() {
             </h1>
 
             <p className="text-neutral-400 text-sm sm:text-base leading-relaxed max-w-xl">
-              Sync Wave is a high-performance audio synchronization platform. Create a listening room, share one simple 10-character code, and experience your music playing across every phone, tab, and speaker at the exact same millisecond.
+              SyncWave is a real-time watch party and shared music platform. Create a room, share the code, and enjoy music and YouTube videos together with friends worldwide.
             </p>
 
             <div className="flex flex-wrap items-center gap-4 pt-2">
@@ -188,7 +188,7 @@ export default function LandingPage() {
             <div className="flex flex-wrap items-center gap-3 pt-2 text-xs font-medium text-neutral-400">
               <span className="px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.08] text-neutral-300">✓ 100% Free Forever</span>
               <span className="px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.08] text-neutral-300">✓ Unlimited Room Size</span>
-              <span className="px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.08] text-white font-semibold">✓ Sub-40ms Drift Accuracy</span>
+              <span className="px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.08] text-white font-semibold">✓ Real-time Sync Lock</span>
             </div>
           </div>
 
@@ -241,9 +241,9 @@ export default function LandingPage() {
               <div className="mt-4 pt-3 border-t border-white/[0.08] flex items-center justify-between text-[11px] text-neutral-400">
                 <span className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
-                  NTP Audio Engine Active
+                  Live Room Active
                 </span>
-                <span className="text-white font-mono text-[10px]">0.02s sync lock</span>
+                <span className="text-white font-mono text-[10px]">In Sync</span>
               </div>
             </div>
           </div>
@@ -305,7 +305,7 @@ export default function LandingPage() {
                     Seamless Zero-Drift Synchronization
                   </h3>
                   <p className="text-xs text-neutral-300 drop-shadow">
-                    Hover to preview • Continuous background loop • Sub-millisecond sync
+                    Watch and listen together in real time with friends
                   </p>
                 </div>
                 <span className="hidden sm:inline-flex px-3 py-1 rounded-full bg-black/60 border border-white/20 text-[11px] font-mono text-neutral-300 backdrop-blur-md">
@@ -368,7 +368,7 @@ export default function LandingPage() {
               <div>
                 <h4 className="text-sm font-bold text-white">Listen In Exact Sync</h4>
                 <p className="text-xs text-neutral-400 mt-1">
-                  Our NTP-based sync engine locks playback within milliseconds across all connected phones and speakers simultaneously.
+                  Playback stays perfectly aligned across every phone, laptop, and speaker simultaneously.
                 </p>
               </div>
             </div>
@@ -409,9 +409,9 @@ export default function LandingPage() {
               <div className="w-12 h-12 rounded-xl bg-white/10 border border-white/20 text-white flex items-center justify-center text-2xl mb-5 shadow-inner group-hover:scale-105 transition-transform">
                 ⚡
               </div>
-              <h3 className="text-base font-bold text-white mb-2">Real-Time Drift Correction</h3>
+              <h3 className="text-base font-bold text-white mb-2">Automatic Sync Alignment</h3>
               <p className="text-xs text-neutral-400 leading-relaxed">
-                Micro-rate clock synchronization smoothly corrects network latency without pitch changes, keeping every phone in tight harmonic phase.
+                Smooth playback adjustment corrects connection slowdowns so everyone stays on the exact same beat.
               </p>
             </div>
           </div>

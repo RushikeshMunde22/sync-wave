@@ -14,12 +14,12 @@ const FAQS: FAQItem[] = [
   {
     category: 'Sync & Performance',
     question: 'How does SyncWave keep music synchronized across different devices?',
-    answer: 'SyncWave uses a proprietary Network Time Protocol (NTP)-inspired synchronization engine. When you connect to a room, your browser exchanges timestamped ping pulses with our server to calculate latency, jitter, and clock offsets. When music plays or seeks, all clients calculate the exact target playback offset so everyone hears the same beat at the same millisecond.',
+    answer: 'SyncWave continuously coordinates playback timing with the room server. When anyone presses play, pause, or seeks, every device immediately aligns so everyone hears and watches the exact same moment together.',
   },
   {
     category: 'Sync & Performance',
     question: 'What happens if my internet connection lags or stutters?',
-    answer: 'Our Web Audio player features multi-device drift correction. If your local audio drifts by more than 1.5 seconds due to a momentary packet loss or mobile network fluctuation, the player automatically re-aligns without interrupting other listeners in the room.',
+    answer: 'Our player features automatic multi-device sync alignment. If connection lag causes your audio to drift, the player automatically re-aligns smoothly without interrupting other listeners in the room.',
   },
   {
     category: 'Features & Rooms',
@@ -29,7 +29,7 @@ const FAQS: FAQItem[] = [
   {
     category: 'Features & Rooms',
     question: 'Does the music keep playing if I switch tabs or lock my phone screen?',
-    answer: 'Yes. SyncWave implements continuous background audio resilience utilizing Web Audio API oscillators and system MediaSession hooks. Your audio will continue playing seamlessly even when you switch tabs, minimize your browser, or lock your mobile device screen.',
+    answer: 'Yes. SyncWave supports background listening so audio keeps playing smoothly when you switch tabs or lock your phone screen.',
   },
   {
     category: 'Admin & Permissions',
