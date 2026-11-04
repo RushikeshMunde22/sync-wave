@@ -50,12 +50,19 @@ export function getSyncEngine(): SyncEngine | null {
   return syncEngineInstance;
 }
 
+interface UserPresenceEntry {
+  member: MemberPresence;
+  sockets: Set<string>;
+  graceTimer?: NodeJS.Timeout;
+  lastHeartbeat: number;
+}
+
 export class SyncEngine {
   private groupLocks = new Map<string, Promise<void>>();
   private playbackStates = new Map<string, PlaybackState>();
   private queues = new Map<string, QueueItem[]>();
   private trackEndTimers = new Map<string, NodeJS.Timeout>();
-  private presence = new Map<string, Map<string, MemberPresence>>();
+  private presence = new Map<string, Map<string, UserPresenceEntry>>();
   private skipVotes = new Map<string, Set<string>>();
   private emptyGroupTimers = new Map<string, NodeJS.Timeout>();
   private songRequests = new Map<string, SongRequest[]>();
@@ -65,6 +72,12 @@ export class SyncEngine {
   }
 
   clearRoom(groupId: string): void {
+    const groupPresence = this.presence.get(groupId);
+    if (groupPresence) {
+      for (const entry of groupPresence.values()) {
+        if (entry.graceTimer) clearTimeout(entry.graceTimer);
+      }
+    }
     this.playbackStates.delete(groupId);
     this.queues.delete(groupId);
     this.songRequests.delete(groupId);
@@ -559,20 +572,88 @@ export class SyncEngine {
     return nextItem;
   }
 
-  addMember(groupId: string, member: MemberPresence): void {
+  addMember(groupId: string, member: MemberPresence, socketId: string = ''): boolean {
     this.cancelEmptyRoomDeletion(groupId);
     if (!this.presence.has(groupId)) {
       this.presence.set(groupId, new Map());
     }
-    this.presence.get(groupId)!.set(member.userId, member);
+    const groupPresence = this.presence.get(groupId)!;
+    const existing = groupPresence.get(member.userId);
+    let isNewUser = false;
+
+    if (existing) {
+      if (existing.graceTimer) {
+        clearTimeout(existing.graceTimer);
+        existing.graceTimer = undefined;
+      }
+      if (socketId) existing.sockets.add(socketId);
+      existing.member = { ...existing.member, ...member };
+      existing.lastHeartbeat = Date.now();
+    } else {
+      isNewUser = true;
+      const sockets = new Set<string>();
+      if (socketId) sockets.add(socketId);
+      groupPresence.set(member.userId, {
+        member,
+        sockets,
+        lastHeartbeat: Date.now(),
+      });
+    }
+
+    return isNewUser;
   }
 
-  removeMember(groupId: string, userId: string): void {
-    if (this.presence.has(groupId)) {
-      this.presence.get(groupId)!.delete(userId);
-      if (this.presence.get(groupId)!.size === 0) {
+  removeMember(groupId: string, userId: string, socketId: string = '', immediate: boolean = false): void {
+    const groupPresence = this.presence.get(groupId);
+    if (!groupPresence) return;
+
+    const entry = groupPresence.get(userId);
+    if (!entry) return;
+
+    if (socketId) {
+      entry.sockets.delete(socketId);
+    }
+
+    // If user still has other active sockets (e.g. another open tab), keep presence active
+    if (entry.sockets.size > 0 && !immediate) {
+      return;
+    }
+
+    const doRemoval = () => {
+      // Re-verify before deleting (user might have reconnected or opened a new tab)
+      if (entry.sockets.size > 0) return;
+
+      groupPresence.delete(userId);
+      if (groupPresence.size === 0) {
         this.presence.delete(groupId);
         this.scheduleEmptyRoomDeletion(groupId);
+      }
+
+      this.io.to(groupId).emit('room:member-left', { userId });
+      this.io.to(groupId).emit('room:members-updated', { members: this.getMembers(groupId) });
+    };
+
+    if (immediate) {
+      if (entry.graceTimer) clearTimeout(entry.graceTimer);
+      entry.graceTimer = undefined;
+      doRemoval();
+    } else {
+      if (entry.graceTimer) clearTimeout(entry.graceTimer);
+      entry.graceTimer = setTimeout(() => {
+        doRemoval();
+      }, 12000); // 12-second grace period for network hiccups / page refreshes
+    }
+  }
+
+  heartbeat(groupId: string, userId: string): void {
+    const groupPresence = this.presence.get(groupId);
+    if (!groupPresence) return;
+    const entry = groupPresence.get(userId);
+    if (entry) {
+      entry.lastHeartbeat = Date.now();
+      if (entry.graceTimer) {
+        clearTimeout(entry.graceTimer);
+        entry.graceTimer = undefined;
       }
     }
   }
@@ -616,19 +697,22 @@ export class SyncEngine {
   updatePresence(groupId: string, userId: string, status: 'listening' | 'paused' | 'buffering'): void {
     const groupPresence = this.presence.get(groupId);
     if (groupPresence && groupPresence.has(userId)) {
-      const member = groupPresence.get(userId)!;
-      member.status = status;
+      const entry = groupPresence.get(userId)!;
+      entry.member.status = status;
+      entry.lastHeartbeat = Date.now();
       this.io.to(groupId).emit('presence:updated', { userId, status });
     }
   }
 
   getMembers(groupId: string): MemberPresence[] {
     const groupPresence = this.presence.get(groupId);
-    return groupPresence ? Array.from(groupPresence.values()) : [];
+    if (!groupPresence) return [];
+    return Array.from(groupPresence.values()).map(e => e.member);
   }
 
   getOnlineCount(groupId: string): number {
-    return this.getMembers(groupId).length;
+    const groupPresence = this.presence.get(groupId);
+    return groupPresence ? groupPresence.size : 0;
   }
 
   castSkipVote(groupId: string, userId: string): { votesNeeded: number; currentVotes: number; passed: boolean } {

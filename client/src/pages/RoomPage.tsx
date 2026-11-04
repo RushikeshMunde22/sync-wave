@@ -243,6 +243,15 @@ export default function RoomPage() {
     };
   }, [socket, isConnected, id]);
 
+  // Presence heartbeat every 5s to maintain active status across mobile tabs / background
+  useEffect(() => {
+    if (!socket || !id || !isConnected) return;
+    const heartbeatTimer = setInterval(() => {
+      socket.emit('presence:heartbeat', { groupId: id });
+    }, 5000);
+    return () => clearInterval(heartbeatTimer);
+  }, [socket, id, isConnected]);
+
   // Search tracks for queue
   useEffect(() => {
     if (!showQueueModal) return;
