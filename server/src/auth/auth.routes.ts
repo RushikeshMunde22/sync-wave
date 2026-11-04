@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
+import { OAuth2Client } from 'google-auth-library';
 import { 
   signupSchema, 
   loginSchema, 
@@ -13,6 +14,8 @@ import {
   createSession, 
   destroySession, 
   findUserByEmail, 
+  findUserByGoogleId,
+  linkGoogleId,
   resetPasswordWithRecovery, 
   resetPasswordByEmail,
   deleteUser, 
@@ -211,6 +214,8 @@ router.get('/config', (_req, res) => {
   });
 });
 
+const googleOAuthClient = new OAuth2Client(config.GOOGLE_CLIENT_ID);
+
 router.post('/google', loginLimiter, async (req, res) => {
   try {
     const { credential } = req.body;
@@ -218,31 +223,43 @@ router.post('/google', loginLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Google credential token is required' });
     }
 
-    // Verify Google ID token via Google's tokeninfo endpoint
-    const googleVerifyUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`;
-    const googleRes = await fetch(googleVerifyUrl);
-
-    if (!googleRes.ok) {
-      return res.status(401).json({ error: 'Invalid Google authentication credential' });
+    let payload: any;
+    if (config.GOOGLE_CLIENT_ID) {
+      try {
+        const ticket = await googleOAuthClient.verifyIdToken({
+          idToken: credential,
+          audience: config.GOOGLE_CLIENT_ID,
+        });
+        payload = ticket.getPayload();
+      } catch (verifyErr: any) {
+        console.warn('[Auth] Google ID token verification failed:', verifyErr?.message);
+        return res.status(401).json({ error: 'Invalid Google authentication credential' });
+      }
+    } else {
+      // Fallback in case GOOGLE_CLIENT_ID is not configured
+      const googleVerifyUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`;
+      const googleRes = await fetch(googleVerifyUrl);
+      if (!googleRes.ok) {
+        return res.status(401).json({ error: 'Invalid Google authentication credential' });
+      }
+      payload = await googleRes.json();
     }
 
-    const payload: any = await googleRes.json();
+    if (!payload) {
+      return res.status(401).json({ error: 'Failed to verify Google account credentials' });
+    }
+
     const email = payload.email?.toLowerCase();
     const emailVerified = payload.email_verified === 'true' || payload.email_verified === true;
     const name = payload.name || payload.given_name || email?.split('@')[0] || 'SyncWave User';
+    const googleId = payload.sub;
 
     if (!email || !emailVerified) {
       return res.status(401).json({ error: 'Google account email is not verified' });
     }
 
-    // Validate audience if GOOGLE_CLIENT_ID is configured
-    if (config.GOOGLE_CLIENT_ID && payload.aud !== config.GOOGLE_CLIENT_ID) {
-      console.warn('[Auth] Google token audience mismatch:', payload.aud, 'expected:', config.GOOGLE_CLIENT_ID);
-      return res.status(401).json({ error: 'Google client ID mismatch' });
-    }
-
-    // Find existing user or create a new user
-    let user = findUserByEmail(email);
+    // Find existing user by googleId or email
+    let user = (googleId ? findUserByGoogleId(googleId) : undefined) || findUserByEmail(email);
     let isNewUser = false;
 
     if (!user) {
@@ -255,12 +272,15 @@ router.post('/google', loginLimiter, async (req, res) => {
         displayName: name,
         avatarEmoji: '⚡',
         avatarColor: '#6366f1',
+        googleId,
       });
       user = created.user;
       isNewUser = true;
 
       // Dispatch welcome email
       sendWelcomeEmail(user.email, user.displayName).catch((e) => console.error('[Mail] Welcome error:', e));
+    } else if (googleId) {
+      linkGoogleId(user.id, googleId);
     }
 
     if (user.isBanned) {

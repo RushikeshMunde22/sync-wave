@@ -49,6 +49,7 @@ export async function createUser(data: {
   displayName: string;
   avatarEmoji?: string;
   avatarColor?: string;
+  googleId?: string;
 }): Promise<{ user: User; recoveryCode?: string }> {
   const db = getDb();
   const id = uuidv4();
@@ -68,8 +69,8 @@ export async function createUser(data: {
   const now = new Date().toISOString();
 
   db.prepare(`
-    INSERT INTO users (id, email, password_hash, display_name, avatar_emoji, avatar_color, role, is_banned, recovery_code_hash, created_at, last_seen_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO users (id, email, password_hash, display_name, avatar_emoji, avatar_color, role, is_banned, recovery_code_hash, google_id, created_at, last_seen_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     email,
@@ -80,6 +81,7 @@ export async function createUser(data: {
     'user',
     0,
     recoveryCodeHash,
+    data.googleId || null,
     now,
     now
   );
@@ -87,6 +89,34 @@ export async function createUser(data: {
   const user = findUserById(id);
   if (!user) throw new Error('Failed to create user');
   return { user, recoveryCode: recoveryCodePlain };
+}
+
+export function findUserByGoogleId(googleId: string): User | undefined {
+  if (!googleId) return undefined;
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM users WHERE google_id = ?').get(googleId) as any;
+  if (!row) return undefined;
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.display_name,
+    avatarEmoji: row.avatar_emoji,
+    avatarColor: row.avatar_color,
+    role: row.role,
+    isBanned: Boolean(row.is_banned),
+    createdAt: row.created_at,
+    lastSeenAt: row.last_seen_at,
+  };
+}
+
+export function linkGoogleId(userId: string, googleId: string): void {
+  if (!userId || !googleId) return;
+  try {
+    const db = getDb();
+    db.prepare('UPDATE users SET google_id = ? WHERE id = ? AND google_id IS NULL').run(googleId, userId);
+  } catch (err) {
+    console.warn('[Auth] Failed to link Google ID:', err);
+  }
 }
 
 export function findUserByEmail(email: string): User | undefined {
