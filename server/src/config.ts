@@ -45,7 +45,7 @@ const configSchema = z.object({
   
   JAMENDO_CLIENT_ID: z.string().optional(),
   
-  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_ID: z.string().default('405727386310-t8h1eup0h2ia1iddlf8qlse7pnalail0.apps.googleusercontent.com'),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   
   SIGNUPS_DISABLED: z.string().transform(v => v === 'true').default('false'),

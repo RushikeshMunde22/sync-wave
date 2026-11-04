@@ -16,6 +16,8 @@ declare global {
   }
 }
 
+const DEFAULT_GOOGLE_CLIENT_ID = '405727386310-t8h1eup0h2ia1iddlf8qlse7pnalail0.apps.googleusercontent.com';
+
 interface GoogleLoginButtonProps {
   redirectUrl?: string | null;
   text?: 'signin_with' | 'signup_with' | 'continue_with';
@@ -23,7 +25,7 @@ interface GoogleLoginButtonProps {
 
 export function GoogleLoginButton({ redirectUrl, text = 'continue_with' }: GoogleLoginButtonProps) {
   const buttonRef = useRef<HTMLDivElement>(null);
-  const [googleClientId, setGoogleClientId] = useState<string | null>(null);
+  const [googleClientId, setGoogleClientId] = useState<string>(DEFAULT_GOOGLE_CLIENT_ID);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [infoModal, setInfoModal] = useState(false);
@@ -45,8 +47,8 @@ export function GoogleLoginButton({ redirectUrl, text = 'continue_with' }: Googl
         }
       } catch {}
 
-      // Fallback to Vite env var if provided
-      const envClientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID;
+      // Fallback to Vite env var or default project client ID
+      const envClientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID;
       if (isMounted && envClientId) {
         setGoogleClientId(envClientId);
       }
@@ -108,34 +110,51 @@ export function GoogleLoginButton({ redirectUrl, text = 'continue_with' }: Googl
     const initializeGsi = () => {
       if (!window.google?.accounts?.id || !buttonRef.current) return;
 
-      window.google.accounts.id.initialize({
-        client_id: googleClientId,
-        callback: handleCredentialResponse,
-        auto_select: false,
-        cancel_on_tap_outside: true,
-      });
+      try {
+        window.google.accounts.id.initialize({
+          client_id: googleClientId,
+          callback: handleCredentialResponse,
+          auto_select: false,
+          cancel_on_tap_outside: true,
+        });
 
-      buttonRef.current.innerHTML = '';
-      window.google.accounts.id.renderButton(buttonRef.current, {
-        type: 'standard',
-        shape: 'pill',
-        theme: 'filled_black',
-        text,
-        size: 'large',
-        logo_alignment: 'left',
-        width: 320,
-      });
+        buttonRef.current.innerHTML = '';
+        window.google.accounts.id.renderButton(buttonRef.current, {
+          type: 'standard',
+          shape: 'pill',
+          theme: 'filled_black',
+          text,
+          size: 'large',
+          logo_alignment: 'left',
+          width: 320,
+        });
+      } catch (e) {
+        console.warn('[GoogleLoginButton] Failed to initialize GSI:', e);
+      }
     };
 
     if (window.google?.accounts?.id) {
       initializeGsi();
     } else {
-      const script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
-      script.async = true;
-      script.defer = true;
-      script.onload = initializeGsi;
-      document.head.appendChild(script);
+      let script = document.querySelector('script[src="https://accounts.google.com/gsi/client"]') as HTMLScriptElement;
+      if (!script) {
+        script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true;
+        script.defer = true;
+        document.head.appendChild(script);
+      }
+      script.addEventListener('load', () => {
+        if (isMounted) initializeGsi();
+      });
+      // Fallback check
+      const checkTimer = setInterval(() => {
+        if (window.google?.accounts?.id) {
+          clearInterval(checkTimer);
+          if (isMounted) initializeGsi();
+        }
+      }, 100);
+      setTimeout(() => clearInterval(checkTimer), 5000);
     }
 
     return () => {
