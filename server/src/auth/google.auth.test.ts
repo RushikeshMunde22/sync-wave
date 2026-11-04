@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { getDb, closeDb } from '../db/database.js';
 import { runMigrations } from '../db/migrator.js';
-import { createUser, findUserByEmail, findUserByGoogleId, linkGoogleId } from './auth.service.js';
+import { createUser, findUserByGoogleId, linkGoogleId } from './auth.service.js';
 import { OAuth2Client } from 'google-auth-library';
 
 describe('Google Authentication & Verification', () => {
