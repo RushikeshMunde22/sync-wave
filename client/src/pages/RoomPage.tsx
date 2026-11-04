@@ -316,14 +316,14 @@ export default function RoomPage() {
       return;
     }
     if (canControlPlayback) {
-      socket.emit('playback:play', { groupId: id });
+      socket.emit('playback:play', { groupId: id, seq: (playback.seq || 0) + 1 });
     }
   };
 
   const handlePause = () => {
     if (!socket || !id) return;
     if (isHostOrAdmin) {
-      socket.emit('playback:pause', { groupId: id, forEveryone: true });
+      socket.emit('playback:pause', { groupId: id, forEveryone: true, seq: (playback.seq || 0) + 1 });
     } else {
       // Local pause for regular members
       audioEngine.setLocallyPaused(true);
@@ -351,7 +351,7 @@ export default function RoomPage() {
 
   const handleSeek = (posMs: number) => {
     if (!socket || !id || !canControlPlayback) return;
-    socket.emit('playback:seek', { groupId: id, positionMs: Math.max(0, posMs) });
+    socket.emit('playback:seek', { groupId: id, positionMs: Math.max(0, posMs), seq: (playback.seq || 0) + 1 });
   };
 
   const handleSkip = () => {
@@ -383,7 +383,7 @@ export default function RoomPage() {
   const handlePlayTrackNow = (track: any) => {
     if (!socket || !id) return;
     setErrorMessage(null);
-    socket.emit('playback:load-track', { groupId: id, trackId: track.id });
+    socket.emit('playback:load-track', { groupId: id, trackId: track.id, seq: (playback.seq || 0) + 1 });
     setShowQueueModal(false);
   };
 
@@ -391,7 +391,7 @@ export default function RoomPage() {
     if (!socket || !id) return;
     setErrorMessage(null);
     const trackId = `youtube:${short.videoId}`;
-    socket.emit('playback:load-track', { groupId: id, trackId });
+    socket.emit('playback:load-track', { groupId: id, trackId, seq: (playback.seq || 0) + 1 });
   };
 
   const handleAddToQueue = (track: any) => {
@@ -731,6 +731,7 @@ export default function RoomPage() {
               isPlaying={playback.isPlaying}
               positionMs={playback.positionMs}
               serverTimeMs={playback.serverTimeMs}
+              seq={playback.seq}
               isLocallyPaused={isLocallyPaused}
               canControl={canControlPlayback}
               title={currentTrack?.title}

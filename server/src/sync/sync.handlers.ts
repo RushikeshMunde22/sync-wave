@@ -13,12 +13,12 @@ import { getDb } from '../db/database.js';
 
 // Schemas for validating incoming payloads
 const groupIdSchema = z.object({ groupId: z.string().min(1) });
-const playSchema = z.object({ groupId: z.string().min(1) });
-const pauseSchema = z.object({ groupId: z.string().min(1), forEveryone: z.boolean() });
-const seekSchema = z.object({ groupId: z.string().min(1), positionMs: z.number().min(0) });
-const skipSchema = z.object({ groupId: z.string().min(1) });
+const playSchema = z.object({ groupId: z.string().min(1), seq: z.number().optional() });
+const pauseSchema = z.object({ groupId: z.string().min(1), forEveryone: z.boolean(), seq: z.number().optional() });
+const seekSchema = z.object({ groupId: z.string().min(1), positionMs: z.number().min(0), seq: z.number().optional() });
+const skipSchema = z.object({ groupId: z.string().min(1), seq: z.number().optional() });
 const endedSchema = z.object({ groupId: z.string().min(1), trackId: z.string().min(1), version: z.number() });
-const loadTrackSchema = z.object({ groupId: z.string().min(1), trackId: z.string().min(1) });
+const loadTrackSchema = z.object({ groupId: z.string().min(1), trackId: z.string().min(1), seq: z.number().optional() });
 const resyncSchema = z.object({ groupId: z.string().min(1) });
 const addQueueSchema = z.object({ groupId: z.string().min(1), trackId: z.string().min(1), playNext: z.boolean().optional() });
 const removeQueueSchema = z.object({ groupId: z.string().min(1), queueItemId: z.string().min(1) });
@@ -201,37 +201,37 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
 
     socket.on('playback:play', async (data) => {
       try {
-        const { groupId } = validateSocketPayload(playSchema, data);
+        const { groupId, seq } = validateSocketPayload(playSchema, data);
         const role = await getMemberRole(user.id, groupId);
         const group = await getGroup(groupId);
         if (role === 'owner' || role === 'admin' || group?.membersCanControl) {
-          await engine.play(groupId, user.id);
+          await engine.play(groupId, user.id, seq);
         }
       } catch (err) { }
     });
 
     socket.on('playback:pause', async (data) => {
       try {
-        const { groupId, forEveryone } = validateSocketPayload(pauseSchema, data);
+        const { groupId, forEveryone, seq } = validateSocketPayload(pauseSchema, data);
         if (forEveryone) {
           const role = await getMemberRole(user.id, groupId);
           const group = await getGroup(groupId);
           if (role === 'owner' || role === 'admin' || group?.membersCanControl) {
-            await engine.pause(groupId, user.id, true);
+            await engine.pause(groupId, user.id, true, seq);
           }
         } else {
-          await engine.pause(groupId, user.id, false);
+          await engine.pause(groupId, user.id, false, seq);
         }
       } catch (err) { }
     });
 
     socket.on('playback:seek', async (data) => {
       try {
-        const { groupId, positionMs } = validateSocketPayload(seekSchema, data);
+        const { groupId, positionMs, seq } = validateSocketPayload(seekSchema, data);
         const role = await getMemberRole(user.id, groupId);
         const group = await getGroup(groupId);
         if (role === 'owner' || role === 'admin' || group?.membersCanControl) {
-          await engine.seek(groupId, user.id, positionMs);
+          await engine.seek(groupId, user.id, positionMs, seq);
         }
       } catch (err) { }
     });
@@ -268,11 +268,11 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
 
     socket.on('playback:load-track', async (data) => {
       try {
-        const { groupId, trackId } = validateSocketPayload(loadTrackSchema, data);
+        const { groupId, trackId, seq } = validateSocketPayload(loadTrackSchema, data);
         const role = await getMemberRole(user.id, groupId);
         const group = await getGroup(groupId);
         if (role === 'owner' || role === 'admin' || group?.membersCanControl) {
-          await engine.loadTrack(groupId, user.id, trackId);
+          await engine.loadTrack(groupId, user.id, trackId, seq);
         } else {
           socket.emit('error', { message: 'Only Group Admins can play tracks immediately' });
         }

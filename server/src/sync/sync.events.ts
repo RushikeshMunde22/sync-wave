@@ -2,12 +2,12 @@ export interface ClientToServerEvents {
   'room:join': (data: { groupId: string }, ack: (response: RoomJoinResponse) => void) => void;
   'room:leave': (data: { groupId: string }) => void;
   'sync:ping': (data: { t0: number }, ack: (response: { t0: number; ts: number }) => void) => void;
-  'playback:play': (data: { groupId: string }) => void;
-  'playback:pause': (data: { groupId: string; forEveryone: boolean }) => void;
-  'playback:seek': (data: { groupId: string; positionMs: number }) => void;
-  'playback:skip': (data: { groupId: string }) => void;
+  'playback:play': (data: { groupId: string; seq?: number }) => void;
+  'playback:pause': (data: { groupId: string; forEveryone: boolean; seq?: number }) => void;
+  'playback:seek': (data: { groupId: string; positionMs: number; seq?: number }) => void;
+  'playback:skip': (data: { groupId: string; seq?: number }) => void;
   'playback:ended': (data: { groupId: string; trackId: string; version: number }) => void;
-  'playback:load-track': (data: { groupId: string; trackId: string }) => void;
+  'playback:load-track': (data: { groupId: string; trackId: string; seq?: number }) => void;
   'playback:resync': (data: { groupId: string }) => void;
   'queue:add': (data: { groupId: string; trackId: string; playNext?: boolean }) => void;
   'queue:remove': (data: { groupId: string; queueItemId: string }) => void;
@@ -15,6 +15,7 @@ export interface ClientToServerEvents {
   'reaction:send': (data: { groupId: string; emoji: string }) => void;
   'skipvote:cast': (data: { groupId: string }) => void;
   'presence:update': (data: { groupId: string; status: 'listening' | 'paused' | 'buffering' }) => void;
+  'presence:heartbeat': (data: { groupId: string }) => void;
   'song-request:submit': (data: { groupId: string; trackId: string }) => void;
   'song-request:approve': (data: { groupId: string; requestId: string; action: 'play-now' | 'queue' }) => void;
   'song-request:reject': (data: { groupId: string; requestId: string }) => void;
@@ -44,6 +45,7 @@ export interface PlaybackState {
   positionMs: number;
   serverTimeMs: number;
   version: number;
+  seq: number;
   controlledBy: string | null;
   track?: TrackInfo;
   mediaType?: 'audio' | 'video';

@@ -19,6 +19,7 @@ export interface PlaybackState {
   positionMs: number;
   serverTimeMs: number;
   version: number;
+  seq: number;
   controlledBy: string | null;
   track?: TrackInfo;
   mediaType?: 'audio' | 'video';
@@ -129,6 +130,7 @@ export const usePlayerStore = create<PlayerStoreState>((set) => ({
     positionMs: 0,
     serverTimeMs: 0,
     version: 0,
+    seq: 0,
     controlledBy: null,
   },
   queue: [],
@@ -227,6 +229,7 @@ export const usePlayerStore = create<PlayerStoreState>((set) => ({
         positionMs: 0,
         serverTimeMs: 0,
         version: 0,
+        seq: 0,
         controlledBy: null,
       },
       queue: [],

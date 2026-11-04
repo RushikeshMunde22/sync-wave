@@ -18,7 +18,7 @@ export function getTrackInfo(trackId: string): TrackInfo | undefined {
           title: `YouTube Video (${videoId})`,
           artist: 'YouTube',
           artworkUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-          durationMs: 240000,
+          durationMs: 14400000, // 4 hours fallback for YouTube watch parties
           attribution: 'YouTube',
           mediaType: 'video',
           videoId,
@@ -99,17 +99,21 @@ export class SyncEngine {
 
   private async withGroupLock<T>(groupId: string, fn: () => T | Promise<T>): Promise<T> {
     const currentLock = this.groupLocks.get(groupId) || Promise.resolve();
-    const nextLock = currentLock.then(async () => {
-      try {
-        await fn();
-      } catch (err) {
-        console.error(`Error in group lock for ${groupId}:`, err);
-      }
+    let releaseLock: () => void;
+    const nextLock = new Promise<void>((resolve) => {
+      releaseLock = resolve;
     });
     this.groupLocks.set(groupId, nextLock);
-    
-    await currentLock;
-    return await fn();
+
+    try {
+      await currentLock;
+      return await fn();
+    } finally {
+      releaseLock!();
+      if (this.groupLocks.get(groupId) === nextLock) {
+        this.groupLocks.delete(groupId);
+      }
+    }
   }
 
   getPlaybackState(groupId: string): PlaybackState {
@@ -129,13 +133,24 @@ export class SyncEngine {
       positionMs: 0,
       serverTimeMs: Date.now(),
       version: 0,
+      seq: 0,
       controlledBy: null
     };
   }
 
-  async play(groupId: string, userId: string): Promise<void> {
+  getExpectedPositionMs(groupId: string): number {
+    const state = this.getPlaybackState(groupId);
+    if (!state.isPlaying) return state.positionMs;
+    return state.positionMs + Math.max(0, Date.now() - state.serverTimeMs);
+  }
+
+  async play(groupId: string, userId: string, clientSeq?: number): Promise<void> {
     await this.withGroupLock(groupId, () => {
       const state = this.getPlaybackState(groupId);
+      if (clientSeq !== undefined && clientSeq < state.seq) {
+        console.warn(`[SyncEngine] Ignored stale play event for group ${groupId}: clientSeq ${clientSeq} < serverSeq ${state.seq}`);
+        return;
+      }
       if (state.isPlaying || !state.trackId) return;
 
       const trackInfo = getTrackInfo(state.trackId) || state.track;
@@ -144,6 +159,7 @@ export class SyncEngine {
       state.isPlaying = true;
       state.serverTimeMs = Date.now();
       state.version += 1;
+      state.seq = Math.max((state.seq || 0) + 1, clientSeq || 0);
       state.controlledBy = userId;
       
       this.playbackStates.set(groupId, state);
@@ -155,7 +171,7 @@ export class SyncEngine {
     });
   }
 
-  async pause(groupId: string, userId: string, forEveryone: boolean): Promise<void> {
+  async pause(groupId: string, userId: string, forEveryone: boolean, clientSeq?: number): Promise<void> {
     if (!forEveryone) {
       this.updatePresence(groupId, userId, 'paused');
       return;
@@ -163,6 +179,10 @@ export class SyncEngine {
 
     await this.withGroupLock(groupId, () => {
       const state = this.getPlaybackState(groupId);
+      if (clientSeq !== undefined && clientSeq < state.seq) {
+        console.warn(`[SyncEngine] Ignored stale pause event for group ${groupId}: clientSeq ${clientSeq} < serverSeq ${state.seq}`);
+        return;
+      }
       if (!state.isPlaying) return;
 
       // Calculate new position
@@ -171,6 +191,7 @@ export class SyncEngine {
       state.isPlaying = false;
       state.serverTimeMs = Date.now();
       state.version += 1;
+      state.seq = Math.max((state.seq || 0) + 1, clientSeq || 0);
       state.controlledBy = userId;
 
       this.playbackStates.set(groupId, state);
@@ -189,12 +210,17 @@ export class SyncEngine {
     });
   }
 
-  async seek(groupId: string, userId: string, positionMs: number): Promise<void> {
+  async seek(groupId: string, userId: string, positionMs: number, clientSeq?: number): Promise<void> {
     await this.withGroupLock(groupId, () => {
       const state = this.getPlaybackState(groupId);
+      if (clientSeq !== undefined && clientSeq < state.seq) {
+        console.warn(`[SyncEngine] Ignored stale seek event for group ${groupId}: clientSeq ${clientSeq} < serverSeq ${state.seq}`);
+        return;
+      }
       state.positionMs = positionMs;
       state.serverTimeMs = Date.now();
       state.version += 1;
+      state.seq = Math.max((state.seq || 0) + 1, clientSeq || 0);
       state.controlledBy = userId;
 
       this.playbackStates.set(groupId, state);
@@ -211,8 +237,13 @@ export class SyncEngine {
     });
   }
 
-  async loadTrack(groupId: string, userId: string, trackId: string): Promise<void> {
+  async loadTrack(groupId: string, userId: string, trackId: string, clientSeq?: number): Promise<void> {
     await this.withGroupLock(groupId, async () => {
+      const existingState = this.getPlaybackState(groupId);
+      if (clientSeq !== undefined && clientSeq < existingState.seq) {
+        console.warn(`[SyncEngine] Ignored stale loadTrack event for group ${groupId}: clientSeq ${clientSeq} < serverSeq ${existingState.seq}`);
+        return;
+      }
       let trackInfo = getTrackInfo(trackId);
       if (!trackInfo || (!trackInfo.streamUrl && !trackId.startsWith('youtube:'))) {
         const [provider, ...rest] = trackId.split(':');
@@ -246,7 +277,8 @@ export class SyncEngine {
         isPlaying: true,
         positionMs: 0,
         serverTimeMs: Date.now(),
-        version: (this.playbackStates.get(groupId)?.version || 0) + 1,
+        version: (existingState?.version || 0) + 1,
+        seq: Math.max((existingState?.seq || 0) + 1, clientSeq || 0),
         controlledBy: userId
       };
 
@@ -314,6 +346,7 @@ export class SyncEngine {
           state.isPlaying = true;
           state.serverTimeMs = Date.now();
           state.version += 1;
+          state.seq = (state.seq || 0) + 1;
           state.controlledBy = userId;
           
           this.playbackStates.set(groupId, state);
@@ -334,6 +367,7 @@ export class SyncEngine {
         state.isPlaying = true;
         state.serverTimeMs = Date.now();
         state.version += 1;
+        state.seq = (state.seq || 0) + 1;
         state.controlledBy = userId;
 
         this.playbackStates.set(groupId, state);
@@ -350,6 +384,7 @@ export class SyncEngine {
       state.isPlaying = false;
       state.positionMs = 0;
       state.version += 1;
+      state.seq = (state.seq || 0) + 1;
       state.controlledBy = userId;
       
       this.playbackStates.set(groupId, state);
@@ -377,6 +412,7 @@ export class SyncEngine {
           state.isPlaying = true;
           state.serverTimeMs = Date.now();
           state.version += 1;
+          state.seq = (state.seq || 0) + 1;
           state.controlledBy = 'system';
           
           this.playbackStates.set(groupId, state);
@@ -397,6 +433,7 @@ export class SyncEngine {
         state.isPlaying = true;
         state.serverTimeMs = Date.now();
         state.version += 1;
+        state.seq = (state.seq || 0) + 1;
         state.controlledBy = 'auto_recommendation';
 
         this.playbackStates.set(groupId, state);
@@ -412,6 +449,7 @@ export class SyncEngine {
       state.isPlaying = false;
       state.positionMs = 0;
       state.version += 1;
+      state.seq = (state.seq || 0) + 1;
       state.controlledBy = 'system';
       
       this.playbackStates.set(groupId, state);
@@ -619,6 +657,12 @@ export class SyncEngine {
     const state = this.getPlaybackState(groupId);
     if (!state.trackId) return;
 
+    // For video / YouTube tracks, do NOT set an artificial timer that interrupts 3-4 hour playback.
+    // The client player natively validates and reports true video end via 'playback:ended'.
+    if (state.mediaType === 'video' || state.trackId.startsWith('youtube:')) {
+      return;
+    }
+
     const version = state.version;
     const trackId = state.trackId;
 
@@ -654,15 +698,41 @@ export class SyncEngine {
         return;
       }
 
+      // If YouTube track, ensure it exists in tracks table to satisfy foreign key constraint
+      if (state.trackId && state.trackId.startsWith('youtube:')) {
+        const vid = state.trackId.replace('youtube:', '');
+        db.prepare(`
+          INSERT OR IGNORE INTO tracks (id, provider, provider_track_id, title, artist, artwork_url, duration_ms)
+          VALUES (?, 'youtube', ?, ?, ?, ?, ?)
+        `).run(
+          state.trackId,
+          vid,
+          state.track?.title || `YouTube Video (${vid})`,
+          state.track?.artist || 'YouTube',
+          state.track?.artworkUrl || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+          state.track?.durationMs || 14400000
+        );
+      }
+
+      // Verify controlledBy exists to avoid user foreign key failure
+      let validControlledBy = state.controlledBy;
+      if (validControlledBy) {
+        const userExists = db.prepare('SELECT 1 FROM users WHERE id = ?').get(validControlledBy);
+        if (!userExists) {
+          validControlledBy = null;
+        }
+      }
+
       db.prepare(`
-        INSERT INTO playback_state (group_id, track_id, is_playing, position_ms, updated_at_server_ms, version, controlled_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO playback_state (group_id, track_id, is_playing, position_ms, updated_at_server_ms, version, seq, controlled_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(group_id) DO UPDATE SET
           track_id = excluded.track_id,
           is_playing = excluded.is_playing,
           position_ms = excluded.position_ms,
           updated_at_server_ms = excluded.updated_at_server_ms,
           version = excluded.version,
+          seq = excluded.seq,
           controlled_by = excluded.controlled_by
       `).run(
         groupId,
@@ -671,18 +741,10 @@ export class SyncEngine {
         state.positionMs,
         state.serverTimeMs,
         state.version,
-        state.controlledBy
+        state.seq || 0,
+        validControlledBy
       );
     } catch (err: any) {
-      if (err?.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
-        this.playbackStates.delete(groupId);
-        this.queues.delete(groupId);
-        this.clearTrackEndTimer(groupId);
-        this.songRequests.delete(groupId);
-        this.presence.delete(groupId);
-        this.skipVotes.delete(groupId);
-        return;
-      }
       console.error('Failed to persist playback state to DB:', err);
     }
   }
@@ -702,6 +764,7 @@ export class SyncEngine {
         positionMs: row.position_ms,
         serverTimeMs: row.updated_at_server_ms,
         version: row.version,
+        seq: row.seq || row.version || 0,
         controlledBy: row.controlled_by,
         track: trackInfo,
         mediaType: trackInfo?.mediaType || (row.track_id?.startsWith('youtube:') ? 'video' : 'audio'),

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Maximize2, Minimize2, Settings, Star } from 'lucide-react';
 import { FloatingReactions } from './FloatingReactions';
 import { usePlayerStore } from '../stores/playerStore';
+import { getEstimatedServerTime } from '../stores/socketStore';
 import { mediaSessionManager } from '../player/MediaSessionManager.js';
 
 declare global {
@@ -17,6 +18,7 @@ interface YouTubeSyncPlayerProps {
   isPlaying: boolean;
   positionMs: number;
   serverTimeMs: number;
+  seq?: number;
   isLocallyPaused?: boolean;
   canControl: boolean;
   title?: string;
@@ -44,6 +46,7 @@ export function YouTubeSyncPlayer({
   isPlaying,
   positionMs,
   serverTimeMs,
+  seq = 0,
   isLocallyPaused = false,
   canControl,
   title,
@@ -68,9 +71,16 @@ export function YouTubeSyncPlayer({
   const [recentEmojiFeedback, setRecentEmojiFeedback] = useState<string | null>(null);
 
   const isSyncingProgrammatically = useRef(false);
+  const programmaticTimeoutRef = useRef<any>(null);
+  const lastHandledSeq = useRef<number>(-1);
+  const currentRateRef = useRef<number>(1.0);
   const checkTimerRef = useRef<any>(null);
   const keepAliveCtxRef = useRef<AudioContext | null>(null);
   const keepAliveOscRef = useRef<OscillatorNode | null>(null);
+
+  // Keep live references to avoid interval recreating
+  const stateRef = useRef({ isPlaying, positionMs, serverTimeMs, seq, isLocallyPaused, canControl });
+  stateRef.current = { isPlaying, positionMs, serverTimeMs, seq, isLocallyPaused, canControl };
 
   const reactions = usePlayerStore((s) => s.reactions);
 
@@ -191,12 +201,13 @@ export function YouTubeSyncPlayer({
     };
   }, [isPlaying, isLocallyPaused]);
 
-  // Compute expected playback position
+  // Compute expected playback position using NTP estimated server time
   const getExpectedSeconds = () => {
     if (!isPlaying || isLocallyPaused) {
       return Math.max(0, positionMs / 1000);
     }
-    const elapsed = Math.max(0, Date.now() - serverTimeMs);
+    const serverNow = getEstimatedServerTime();
+    const elapsed = Math.max(0, serverNow - (serverTimeMs || serverNow));
     return Math.max(0, (positionMs + elapsed) / 1000);
   };
 
@@ -275,26 +286,35 @@ export function YouTubeSyncPlayer({
             const expected = getExpectedSeconds();
             isSyncingProgrammatically.current = true;
             try {
-              event.target.seekTo(expected, true);
+              if (expected > 0.5) {
+                event.target.seekTo(expected, true);
+              }
               if (isPlaying && !isLocallyPaused) {
                 event.target.playVideo();
               } else {
                 event.target.pauseVideo();
               }
             } catch {}
-            setTimeout(() => {
+            if (programmaticTimeoutRef.current) clearTimeout(programmaticTimeoutRef.current);
+            programmaticTimeoutRef.current = setTimeout(() => {
               isSyncingProgrammatically.current = false;
-            }, 600);
+            }, 1200);
           },
           onStateChange: (event: any) => {
             if (isCancelled || isSyncingProgrammatically.current) return;
 
             // YT.PlayerState: ENDED = 0, PLAYING = 1, PAUSED = 2, BUFFERING = 3
             if (event.data === 0) {
-              onEnded?.();
-            } else if (event.data === 1 && canControl && !isPlaying) {
-              onPlay?.();
-            } else if (event.data === 2 && canControl && isPlaying) {
+              const dur = typeof event.target.getDuration === 'function' ? event.target.getDuration() : 0;
+              const cur = typeof event.target.getCurrentTime === 'function' ? event.target.getCurrentTime() : 0;
+              if (dur > 0 && cur >= dur - 3) {
+                onEnded?.();
+              }
+            } else if (event.data === 1) {
+              if (canControl && !isPlaying && !isSyncingProgrammatically.current) {
+                onPlay?.();
+              }
+            } else if (event.data === 2) {
               // Screen lock / tab switch on mobile automatically causes YouTube iframe to pause.
               // Crucial: do NOT pause the room for everyone! Keep playing audio.
               if (document.hidden) {
@@ -303,7 +323,9 @@ export function YouTubeSyncPlayer({
                 } catch {}
                 return;
               }
-              onPause?.();
+              if (canControl && isPlaying && !isSyncingProgrammatically.current) {
+                onPause?.();
+              }
             }
           },
           onError: (err: any) => {
@@ -334,13 +356,21 @@ export function YouTubeSyncPlayer({
     };
   }, [videoId, containerId]);
 
-  // 5. React to isPlaying and positionMs updates from the room
+  // 5. React to isPlaying and positionMs updates from the room with seq deduplication
   useEffect(() => {
     if (!isPlayerReady || !playerRef.current) return;
     const player = playerRef.current;
     if (typeof player.getPlayerState !== 'function') return;
 
+    if (seq !== undefined && seq > 0 && seq <= lastHandledSeq.current) {
+      return;
+    }
+    if (seq !== undefined && seq > 0) {
+      lastHandledSeq.current = seq;
+    }
+
     isSyncingProgrammatically.current = true;
+    if (programmaticTimeoutRef.current) clearTimeout(programmaticTimeoutRef.current);
 
     try {
       const expectedSec = getExpectedSeconds();
@@ -348,7 +378,10 @@ export function YouTubeSyncPlayer({
       const drift = Math.abs(currentSec - expectedSec);
 
       if (drift > 1.5) {
-        player.seekTo(expectedSec, true);
+        // Prevent accidental seek to 0 if expected is well into the video
+        if (!(expectedSec > 5.0 && currentSec <= 0.5 && expectedSec < 1.0)) {
+          player.seekTo(expectedSec, true);
+        }
       }
 
       if (isPlaying && !isLocallyPaused) {
@@ -359,15 +392,20 @@ export function YouTubeSyncPlayer({
     } catch (err) {
       console.warn('[YouTubeSyncPlayer] Sync error:', err);
     } finally {
-      setTimeout(() => {
+      programmaticTimeoutRef.current = setTimeout(() => {
         isSyncingProgrammatically.current = false;
-      }, 500);
+      }, 1200);
     }
-  }, [isPlaying, positionMs, serverTimeMs, isLocallyPaused, isPlayerReady]);
+  }, [isPlaying, positionMs, serverTimeMs, seq, isLocallyPaused, isPlayerReady]);
 
-  // 6. Continuous Drift Check & Time Reporting
+  // 6. Continuous 2s Drift-Correction Loop & Time Reporting
   useEffect(() => {
     if (!isPlayerReady || !playerRef.current) return;
+
+    const isDebugSync = typeof window !== 'undefined' && (
+      window.location.search.includes('debug=sync') ||
+      localStorage.getItem('SYNC_DEBUG') === 'true'
+    );
 
     checkTimerRef.current = setInterval(() => {
       const player = playerRef.current;
@@ -382,31 +420,80 @@ export function YouTubeSyncPlayer({
           mediaSessionManager.updatePositionState({
             durationMs: durSec * 1000,
             positionMs: curSec * 1000,
-            playbackRate: 1.0,
+            playbackRate: currentRateRef.current,
           });
+        }
+
+        // Skip drift adjustment if tab is hidden or player is buffering (state 3)
+        const playerState = typeof player.getPlayerState === 'function' ? player.getPlayerState() : -1;
+        if (document.hidden || playerState === 3) {
+          if (currentRateRef.current !== 1.0 && typeof player.setPlaybackRate === 'function') {
+            player.setPlaybackRate(1.0);
+            currentRateRef.current = 1.0;
+          }
+          return;
         }
 
         if (isPlaying && !isLocallyPaused && !isSyncingProgrammatically.current) {
           const expectedSec = getExpectedSeconds();
-          const drift = Math.abs(curSec - expectedSec);
-          if (drift > 2.0) {
-            isSyncingProgrammatically.current = true;
-            player.seekTo(expectedSec, true);
-            setTimeout(() => {
-              isSyncingProgrammatically.current = false;
-            }, 500);
+          const drift = curSec - expectedSec; // positive = client ahead, negative = client behind
+          const absDrift = Math.abs(drift);
+
+          if (isDebugSync) {
+            console.log('[SyncDebug]', {
+              drift: drift.toFixed(3),
+              curSec: curSec.toFixed(2),
+              expectedSec: expectedSec.toFixed(2),
+              rate: currentRateRef.current,
+              seq,
+            });
+          }
+
+          if (absDrift < 0.4) {
+            // Deadband: within acceptable tolerance (<0.4s)
+            if (currentRateRef.current !== 1.0 && typeof player.setPlaybackRate === 'function') {
+              player.setPlaybackRate(1.0);
+              currentRateRef.current = 1.0;
+            }
+          } else if (absDrift <= 2.0) {
+            // Gentle adjustment: 0.4s - 2.0s
+            // If falling behind (drift < 0), speed up to 1.05x; if running ahead, slow down to 0.95x
+            const targetRate = drift < 0 ? 1.05 : 0.95;
+            if (currentRateRef.current !== targetRate && typeof player.setPlaybackRate === 'function') {
+              player.setPlaybackRate(targetRate);
+              currentRateRef.current = targetRate;
+            }
+          } else {
+            // Hard seek (>2.0s)
+            // Guard: Never seek back to 0 if expected is past 5 seconds
+            if (!(expectedSec > 5.0 && expectedSec < 1.0)) {
+              isSyncingProgrammatically.current = true;
+              player.seekTo(expectedSec, true);
+              if (currentRateRef.current !== 1.0 && typeof player.setPlaybackRate === 'function') {
+                player.setPlaybackRate(1.0);
+                currentRateRef.current = 1.0;
+              }
+              if (programmaticTimeoutRef.current) clearTimeout(programmaticTimeoutRef.current);
+              programmaticTimeoutRef.current = setTimeout(() => {
+                isSyncingProgrammatically.current = false;
+              }, 1200);
+            }
           }
         }
       } catch {}
-    }, 500);
+    }, 2000);
 
     return () => {
       if (checkTimerRef.current) {
         clearInterval(checkTimerRef.current);
         checkTimerRef.current = null;
       }
+      if (programmaticTimeoutRef.current) {
+        clearTimeout(programmaticTimeoutRef.current);
+        programmaticTimeoutRef.current = null;
+      }
     };
-  }, [isPlaying, isLocallyPaused, isPlayerReady, serverTimeMs, positionMs]);
+  }, [isPlaying, isLocallyPaused, isPlayerReady, serverTimeMs, positionMs, seq]);
 
   const handleManualPlay = () => {
     if (playerRef.current && typeof playerRef.current.playVideo === 'function') {

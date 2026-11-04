@@ -6,6 +6,7 @@ export interface PlaybackStatePayload {
   positionMs: number;
   serverTimeMs: number;
   version: number;
+  seq?: number;
   controlledBy: string | null;
   mediaType?: 'audio' | 'video';
   videoId?: string;
